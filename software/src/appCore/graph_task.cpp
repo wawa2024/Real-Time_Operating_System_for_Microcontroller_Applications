@@ -8,6 +8,7 @@
 #include <SPI.h>
 #include <esp32-oscilloscope.h>
 #include <driver/adc.h>
+#include <hmiCore.h>
 
 /////////////////////////////// 2.Macros ///////////////////////////////
 
@@ -24,6 +25,9 @@
 //////////////////////////// 4.1.Variables /////////////////////////////
 //////////////////////////// 4.2.Functions /////////////////////////////
 //////////////////////////// 5.Definitions /////////////////////////////
+
+static QueueHandle_t q = NULL;
+
 //////////////////////////// 5.1.Variables /////////////////////////////
 
 static uint16_t trigger_level = 3584;
@@ -52,16 +56,26 @@ void adc_task(void *pvParameters) {
   }
 }
 
+static void oscilloscope_deinit(){
+  #ifdef DEBUG
+  Serial.println("[ui_task]: self-deleting");
+  #endif
+
+  mutex_release();
+
+  vTaskDelete(NULL); // self-delete
+}
+
 void trigger() {
 	for (int i = RESOLUTION_X / 2; i < BUF_LEN; ++i) {
 		size_t index = (write_head - 1 - i + BUF_LEN) % BUF_LEN;
 		uint16_t value1 = samples[index];
 		uint16_t value2 = samples[(index + 1) % BUF_LEN];
 		if (trigger_level >= value1 && trigger_level < value2) {
-			read_head = index - RESOLUTION_X / 2 + BUF_LEN % BUF_LEN;
+			read_head = (index - RESOLUTION_X / 2 + BUF_LEN) % BUF_LEN;
 			return;
-		} else if (trigger_level <=value1 && trigger_level > value2) {
-			read_head = index - RESOLUTION_X / 2 + BUF_LEN % BUF_LEN;
+		} else if (trigger_level <= value1 && trigger_level > value2) {
+			read_head = (index - RESOLUTION_X / 2 + BUF_LEN) % BUF_LEN;
 			return;
 		}
 	}
@@ -69,7 +83,7 @@ void trigger() {
 }
 
 void draw_trigger() {
-	tft.drawFastHLine(0, trigger_level / 32, RESOLUTION_X, TFT_CYAN);
+	tft.drawFastHLine(0, RESOLUTION_Y - trigger_level / 17, RESOLUTION_X, TFT_CYAN);
 }
 
 void draw_graph() {
@@ -92,7 +106,7 @@ void draw_grid() {
 }
 
 void ui_task(void *pvParameters) {
-	uint8_t counter = 0;
+  q = *(QueueHandle_t*)pvParameters;
 
 	xTaskCreate(adc_task
               ,"ADC"
@@ -107,6 +121,25 @@ void ui_task(void *pvParameters) {
     if(mutex_take()) {
 
       while(true) {
+
+        hmiEventData_t data = getinputs(q);
+        uint32_t& inputs = data.inputs;
+
+        if( inputs & BTN_ESC ) oscilloscope_deinit();
+
+        if ( inputs & BTN_UP ) {
+          trigger_level += 500;
+          if (trigger_level > ADC_RESOLUTION) {
+            trigger_level = ADC_RESOLUTION;
+          }
+        } else if ( inputs & BTN_DOWN ) {
+          if (trigger_level < 500) {
+            trigger_level = 0;
+          } else {
+            trigger_level -= 500;
+          }
+        }
+
         tft.fillScreen(TFT_BLACK);
         trigger();
         draw_grid();
@@ -119,43 +152,4 @@ void ui_task(void *pvParameters) {
     }
 
 	}
-}
-
-void sensor_generator(uint16_t& sensor_reading, bool& adding) {
-	uint16_t incrementer = random(20, 100);
-	if (random(0,10) > 8) {
-		incrementer = incrementer * 3;
-	}
-	uint16_t temp = sensor_reading + incrementer;
-	if (adding) {
-		temp = sensor_reading + incrementer;
-		if (temp > 3396) {
-			adding = false;
-		}
-	} else if (!adding) {
-		temp = sensor_reading - incrementer;
-		if (temp < 600) {
-			adding = true;
-		}
-	}
-	sensor_reading = temp;
-}
-
-void graph_task(void *pvParameters) {
-  xTaskCreate(ui_task
-              ,"UI"
-              ,1024
-              ,NULL
-              ,1
-              ,NULL
-              );
-
-  xTaskCreate(adc_task
-              ,"ADC"
-              ,1024
-              ,NULL
-              ,1
-              ,NULL
-              );
-  while(true);
 }
