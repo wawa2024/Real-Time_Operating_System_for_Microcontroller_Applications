@@ -12,6 +12,7 @@
 
 #include <hmiCore.h>
 #include "snake_task.h"
+#include "graph_task.h"
 
 /////////////////////////////// 2.Macros ///////////////////////////////
 
@@ -24,7 +25,7 @@
 typedef struct {
   void (*task)(void*);
   char* title;
-  uint32_t stacK_size;
+  uint32_t stack_size;
 } menu_t;
 
 //////////////////////////// 4.Declarations ////////////////////////////
@@ -38,7 +39,7 @@ static void info(void*);
 
 static menu_t items[] = {
   {info,"About version", 1024}
-  ,{info,"Oscilloscope", 1024}
+  ,{ui_task,"Oscilloscope", 16384}
   ,{snake_task,"Snake", 16384}
 };
 static const size_t items_num = sizeof(items)/sizeof(menu_t);
@@ -139,7 +140,7 @@ void loop(void) {
       menu_t& item = items[index];
       xTaskCreate(item.task
                   ,item.title
-                  ,item.stacK_size
+                  ,item.stack_size
                   ,&q
                   ,1
                   ,&xHandle

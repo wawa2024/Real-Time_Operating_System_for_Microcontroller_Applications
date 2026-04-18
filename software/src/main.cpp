@@ -12,7 +12,7 @@
 #include "appCore/time_task.h"
 #include "appCore/menu_task.h"
 
-#include "graph_task.h"
+#include "appCore/graph_task.h"
 
 #define TFT_DISPLAY
 #include <esp32-oscilloscope.h>
