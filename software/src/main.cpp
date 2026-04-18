@@ -19,6 +19,7 @@
 TFT_eSPI tft = TFT_eSPI();
 SemaphoreHandle_t screen_mutex = xSemaphoreCreateMutex();
 SemaphoreHandle_t inputs_mutex = xSemaphoreCreateMutex();
+SemaphoreHandle_t serial_mutex = xSemaphoreCreateMutex();
 
 //////////////////////////// 5.2.Functions /////////////////////////////
 
@@ -29,11 +30,19 @@ bool mutex_take(){
     ;
 }
 
+bool mutex_take(SemaphoreHandle_t m){
+  return xSemaphoreTake(m,0) == pdTRUE;
+}
+
 bool mutex_release(){
   return
     ( xSemaphoreGive(screen_mutex) == pdTRUE ) &&
     ( xSemaphoreGive(inputs_mutex) == pdTRUE )
     ;
+}
+
+bool mutex_release(SemaphoreHandle_t m){
+  return xSemaphoreGive(m) == pdTRUE;
 }
 
 void reset() {

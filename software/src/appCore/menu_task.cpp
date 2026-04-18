@@ -8,12 +8,14 @@
 
 #include "snake_task.h"
 #include "graph_task.h"
+#include "serial_task.h"
 
 /////////////////////////////// 2.Macros ///////////////////////////////
 
 #define REFRESH_RATE_MS 170
 #define ITEM_SIZE sizeof(hmiEventData_t)
 #define DELAY(X) vTaskDelay(X / portTICK_PERIOD_MS)
+#define DEFAULT_INDEX 1
 
 /////////////////////////////// 3.Types ////////////////////////////////
 
@@ -33,7 +35,7 @@ static void info(void*);
 //////////////////////////// 5.1.Variables /////////////////////////////
 
 static menu_t items[] = {
-  {info,"About version", 1024}
+  {info,"About version", 2048}
   ,{ui_task,"Oscilloscope", 16384}
   ,{snake_task,"Snake", 16384}
 };
@@ -46,11 +48,12 @@ static const size_t items_num = sizeof(items)/sizeof(menu_t);
  */
 static void info(void* pvParameter){
 
-  #ifdef DEBUG
+#ifdef DEBUG
   Serial.println("[info_task]: launched");
-  #endif
+#endif
 
   QueueHandle_t q = *(QueueHandle_t*)pvParameter;
+
   // attempt to take mutex
   while(true){
     if (mutex_take()){
@@ -63,14 +66,20 @@ static void info(void* pvParameter){
       tft.println(items_num);
 
       // Wait for ESC button press
-      for(hmiEventData_t data = getinputs(q); !(data.inputs & BTN_ESC); data = getinputs(q));
+      while(true){
+        uint32_t inputs = getinputs(q).inputs;
+        if( inputs & BTN_ESC ) break;
+      }
 
       mutex_release();
-      #ifdef DEBUG
+
+#ifdef DEBUG
       Serial.println("[info_task]: self-deleting");
-      #endif
+#endif
+
       vTaskDelete(NULL); // self-delete
       break;
+
     } else {
       DELAY(160);
     }
@@ -104,12 +113,31 @@ static void draw(uint16_t index) {
 
 }
 
+static bool isChildDead(TaskHandle_t t){
+  eTaskState s = eTaskGetState(t);
+  return t == NULL ? false : s == eDeleted;
+}
+
 void loop(void) {
+
+  xTaskCreate(serial_task,"serial_task",2048,NULL,1,NULL);
 
   QueueHandle_t q = hmiCore_init(100,250,100);
   uint16_t index = 0;
   TaskHandle_t xHandle = NULL;
 
+  menu_t& default_item = items[DEFAULT_INDEX];
+  xTaskCreate(default_item.task
+              ,default_item.title
+              ,default_item.stack_size
+              ,&q
+              ,1
+              ,&xHandle
+              );
+
+  while(not isChildDead(xHandle)) DELAY(REFRESH_RATE_MS);
+
+  xHandle = NULL;
   draw(index);
 
   while (true) {
