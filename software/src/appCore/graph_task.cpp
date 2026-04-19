@@ -28,7 +28,12 @@ enum class State {
   TRIGGER_SETTINGS,
   SCALE,
   POSITION,
-  MEASURE
+  MEASURE,
+  CURSOR,
+  AUTOSET,
+  RUN,
+  STOP,
+  MATH
 };
 
 typedef struct {
@@ -55,6 +60,12 @@ typedef struct {
   uint16_t ch1_level;
   uint16_t ch2_level;
 } TriggerLevel;
+
+typedef struct {
+  uint16_t x;
+  uint16_t y;
+  boolean en;
+} Cursor;
 
 //////////////////////////// 4.Declarations ////////////////////////////
 //////////////////////////// 4.1.Variables /////////////////////////////
@@ -86,7 +97,13 @@ ViewState ch2_view = {
 
 TriggerLevel triggers = {
   .ch1_level = 1760,
-  .ch2_level = 1760
+  .ch2_level = 1765
+};
+
+Cursor cursor_1 = {
+  .x = RESOLUTION_X / 2,
+  .y = RESOLUTION_Y / 2,
+  .en = false
 };
 
 State state = State::TRIGGER;
@@ -147,14 +164,21 @@ void trigger(RingBuffer *rb, uint16_t trigger_level) {
 	rb->read_head = (rb->write_head - RESOLUTION_X + BUF_LEN) % BUF_LEN;
 }
 
-void draw_trigger(uint16_t trigger_level, ViewState view) {
+void draw_trigger(uint16_t trigger_level, ViewState view, uint32_t color) {
   float adjusted = (trigger_level - view.y_offset) * view.y_zoom;
 
   int y = RESOLUTION_Y / 2 - (int)adjusted;
-	tft.drawFastHLine(0, y, RESOLUTION_X, TFT_CYAN);
+	tft.drawFastHLine(0, y, RESOLUTION_X, color);
 }
 
-void draw_graph(RingBuffer *rb, ViewState view) {
+void draw_cursor(uint32_t color) {
+  if (cursor_1.en) {
+    tft.drawFastHLine(0, RESOLUTION_Y - cursor_1.y, RESOLUTION_X, color);
+    tft.drawFastVLine(cursor_1.x, 0, RESOLUTION_Y, color);
+  }
+}
+
+void draw_graph(RingBuffer *rb, ViewState view, int32_t color) {
   uint32_t head_snapshot = rb->read_head;
 
   int prev_x = 0;
@@ -182,7 +206,7 @@ void draw_graph(RingBuffer *rb, ViewState view) {
     if (y >= RESOLUTION_Y) y = RESOLUTION_Y - 1;
 
     if (x > 0) {
-      tft.drawLine(RESOLUTION_X - prev_x, prev_y, RESOLUTION_X - x, y, TFT_GREEN);
+      tft.drawLine(RESOLUTION_X - prev_x, prev_y, RESOLUTION_X - x, y, color);
     }
 
     prev_x = x;
@@ -215,6 +239,14 @@ void button_logic(uint16_t *trigger_level, ViewState *view) {
     state = State::TRIGGER;
   } else if ( inputs & BTN_MEASURE ) {
     state = State::MEASURE;
+  } else if ( inputs & BTN_CURSORS ) {
+    if (state == State::CURSOR) {
+      cursor_1.en = !cursor_1.en;
+      State::POSITION;
+    } else {
+      cursor_1.en = true;
+      state = State::CURSOR;
+    }
   } else if ( inputs & BTN_CH1 ) {
     if (ch_states.ch_selected) {
       ch_states.ch1_active = true;
@@ -273,6 +305,18 @@ void button_logic(uint16_t *trigger_level, ViewState *view) {
       }
       break;
 
+    case State::CURSOR:
+      if (inputs & BTN_UP) {
+        cursor_1.y += 5;
+      } else if (inputs & BTN_DOWN) {
+        cursor_1.y -= 5;
+      } else if (inputs & BTN_RIGHT) {
+        cursor_1.x += 5;
+      } else if (inputs & BTN_LEFT) {
+        cursor_1.x -= 5;
+      }
+      break;
+
     default:
         break;
   }
@@ -305,14 +349,15 @@ void ui_task(void *pvParameters) {
         draw_grid();
         if (ch_states.ch1_active) {
           trigger(&rb_ch1, triggers.ch1_level);
-          draw_graph(&rb_ch1, ch1_view);
-          draw_trigger(triggers.ch1_level, ch1_view);
+          draw_graph(&rb_ch1, ch1_view, TFT_GREEN);
+          draw_trigger(triggers.ch1_level, ch1_view, TFT_CYAN);
         }
         if (ch_states.ch2_active) {
           trigger(&rb_ch2, triggers.ch2_level);
-          draw_graph(&rb_ch2, ch2_view);
-          draw_trigger(triggers.ch2_level, ch2_view);
+          draw_graph(&rb_ch2, ch2_view, TFT_YELLOW);
+          draw_trigger(triggers.ch2_level, ch2_view, TFT_MAGENTA);
         }
+        draw_cursor(TFT_SKYBLUE);
         vTaskDelay(pdMS_TO_TICKS(100));
       }
 
