@@ -25,7 +25,12 @@ enum class State {
   TRIGGER_SETTINGS,
   SCALE,
   POSITION,
-  MEASURE
+  MEASURE,
+  CURSOR,
+  AUTOSET,
+  RUN,
+  STOP,
+  MATH
 };
 
 typedef struct {
@@ -42,6 +47,23 @@ typedef struct {
   int32_t y_offset;
 } ViewState;
 
+typedef struct {
+  bool ch_selected = 0;
+  bool ch1_active = 1;
+  bool ch2_active = 1;
+} ChannelState;
+
+typedef struct {
+  uint16_t ch1_level;
+  uint16_t ch2_level;
+} TriggerLevel;
+
+typedef struct {
+  uint16_t x;
+  uint16_t y;
+  boolean en;
+} Cursor;
+
 //////////////////////////// 4.Declarations ////////////////////////////
 //////////////////////////// 4.1.Variables /////////////////////////////
 //////////////////////////// 4.2.Functions /////////////////////////////
@@ -51,33 +73,64 @@ static QueueHandle_t q = NULL;
 
 //////////////////////////// 5.1.Variables /////////////////////////////
 
-RingBuffer rb{};
+RingBuffer rb_ch1{};
+RingBuffer rb_ch2{};
 
-ViewState view = {
+ChannelState ch_states{};
+
+ViewState ch1_view = {
   .x_zoom = 2.0,
   .y_zoom = 1.0,
   .x_offset = 0,
   .y_offset = 1710
 };
-static uint16_t trigger_level = 1760;
+
+ViewState ch2_view = {
+  .x_zoom = 2.0,
+  .y_zoom = 1.0,
+  .x_offset = 0,
+  .y_offset = 1710
+};
+
+TriggerLevel triggers = {
+  .ch1_level = 1760,
+  .ch2_level = 1765
+};
+
+Cursor cursor_1 = {
+  .x = RESOLUTION_X / 2,
+  .y = RESOLUTION_Y / 2,
+  .en = false
+};
+
 State state = State::TRIGGER;
 
 //////////////////////////// 5.2.Functions /////////////////////////////
 
-void add_sample(uint16_t v) {
-	rb.samples[rb.write_head] = v;
-	rb.write_head = (rb.write_head + 1) % BUF_LEN;
+void add_sample(uint16_t v, RingBuffer *rb) {
+	rb->samples[rb->write_head] = v;
+	rb->write_head = (rb->write_head + 1) % BUF_LEN;
 }
 
 void adc_task(void *pvParameters) {
   // ADC1 (GPIO34)
 //  memset(rb.samples, 64, sizeof(rb.samples));
+  adc2_config_channel_atten(ADC2_CHANNEL_8, ADC_ATTEN_DB_12);
   adc1_config_width(ADC_WIDTH_BIT_12);
   adc1_config_channel_atten(ADC1_CHANNEL_5, ADC_ATTEN_DB_12);
 
 	while (true) {
-		uint16_t ch1 = adc1_get_raw(ADC1_CHANNEL_5);
-		add_sample(ch1);
+    if (ch_states.ch1_active) {
+      int ch1_reading;
+      if (adc2_get_raw(ADC2_CHANNEL_8, ADC_WIDTH_BIT_12, &ch1_reading) == ESP_OK) {
+        add_sample((uint16_t)ch1_reading, &rb_ch1);
+      }
+    }
+    if (ch_states.ch2_active) {
+      uint16_t ch2_reading = adc1_get_raw(ADC1_CHANNEL_5);
+      add_sample(ch2_reading, &rb_ch2);
+    }
+
 		vTaskDelay(pdMS_TO_TICKS(1));
   }
 }
@@ -92,31 +145,38 @@ static void oscilloscope_deinit(){
   vTaskDelete(NULL); // self-delete
 }
 
-void trigger() {
+void trigger(RingBuffer *rb, uint16_t trigger_level) {
 	for (int i = RESOLUTION_X / 2; i < BUF_LEN; ++i) {
-		size_t index = (rb.write_head - 1 - i + BUF_LEN) % BUF_LEN;
-		uint16_t value1 = rb.samples[index];
-		uint16_t value2 = rb.samples[(index + 1) % BUF_LEN];
+		size_t index = (rb->write_head - 1 - i + BUF_LEN) % BUF_LEN;
+		uint16_t value1 = rb->samples[index];
+		uint16_t value2 = rb->samples[(index + 1) % BUF_LEN];
 		if (trigger_level >= value1 && trigger_level < value2) {
-			rb.read_head = (index - RESOLUTION_X / 2 + BUF_LEN) % BUF_LEN;
+			rb->read_head = (index - RESOLUTION_X / 2 + BUF_LEN) % BUF_LEN;
 			return;
 		} else if (trigger_level <= value1 && trigger_level > value2) {
-			rb.read_head = (index - RESOLUTION_X / 2 + BUF_LEN) % BUF_LEN;
+			rb->read_head = (index - RESOLUTION_X / 2 + BUF_LEN) % BUF_LEN;
 			return;
 		}
 	}
-	rb.read_head = (rb.write_head - RESOLUTION_X + BUF_LEN) % BUF_LEN;
+	rb->read_head = (rb->write_head - RESOLUTION_X + BUF_LEN) % BUF_LEN;
 }
 
-void draw_trigger() {
+void draw_trigger(uint16_t trigger_level, ViewState view, uint32_t color) {
   float adjusted = (trigger_level - view.y_offset) * view.y_zoom;
 
   int y = RESOLUTION_Y / 2 - (int)adjusted;
-	tft.drawFastHLine(0, y, RESOLUTION_X, TFT_CYAN);
+	tft.drawFastHLine(0, y, RESOLUTION_X, color);
 }
 
-void draw_graph() {
-  uint32_t head_snapshot = rb.read_head;
+void draw_cursor(uint32_t color) {
+  if (cursor_1.en) {
+    tft.drawFastHLine(0, RESOLUTION_Y - cursor_1.y, RESOLUTION_X, color);
+    tft.drawFastVLine(cursor_1.x, 0, RESOLUTION_Y, color);
+  }
+}
+
+void draw_graph(RingBuffer *rb, ViewState view, int32_t color) {
+  uint32_t head_snapshot = rb->read_head;
 
   int prev_x = 0;
   int prev_y = 0;
@@ -133,7 +193,7 @@ void draw_graph() {
 
     sample_index %= BUF_LEN;
 
-    uint16_t val = rb.samples[sample_index];
+    uint16_t val = rb->samples[sample_index];
 
     float adjusted = (val - view.y_offset) * view.y_zoom;
 
@@ -143,7 +203,7 @@ void draw_graph() {
     if (y >= RESOLUTION_Y) y = RESOLUTION_Y - 1;
 
     if (x > 0) {
-      tft.drawLine(prev_x, prev_y, x, y, TFT_GREEN);
+      tft.drawLine(RESOLUTION_X - prev_x, prev_y, RESOLUTION_X - x, y, color);
     }
 
     prev_x = x;
@@ -160,7 +220,7 @@ void draw_grid() {
 	}
 }
 
-void button_logic() {
+void button_logic(uint16_t *trigger_level, ViewState *view) {
   hmiEventData_t data = getinputs(q);
   uint32_t& inputs = data.inputs;
 
@@ -176,19 +236,43 @@ void button_logic() {
     state = State::TRIGGER;
   } else if ( inputs & BTN_MEASURE ) {
     state = State::MEASURE;
+  } else if ( inputs & BTN_CURSORS ) {
+    if (state == State::CURSOR) {
+      cursor_1.en = !cursor_1.en;
+      State::POSITION;
+    } else {
+      cursor_1.en = true;
+      state = State::CURSOR;
+    }
+  } else if ( inputs & BTN_CH1 ) {
+    if (ch_states.ch_selected) {
+      ch_states.ch1_active = true;
+      ch_states.ch_selected = false;
+    } else {
+      ch_states.ch1_active = false;
+      ch_states.ch_selected = true;
+    }
+  } else if ( inputs & BTN_CH2 ) {
+    if (!ch_states.ch_selected) {
+      ch_states.ch2_active = true;
+      ch_states.ch_selected = true;
+    } else {
+      ch_states.ch2_active = false;
+      ch_states.ch_selected = false;
+    }
   }
 
   switch (state) {
     case State::TRIGGER:
       if (inputs & BTN_UP) {
-        trigger_level += 32;
-        if (trigger_level > ADC_RESOLUTION)
-          trigger_level = ADC_RESOLUTION;
+        *trigger_level += 32;
+        if (*trigger_level > ADC_RESOLUTION)
+          *trigger_level = ADC_RESOLUTION;
       } else if (inputs & BTN_DOWN) {
-        if (trigger_level < 32)
-          trigger_level = 0;
+        if (*trigger_level < 32)
+          *trigger_level = 0;
         else
-          trigger_level -= 32;
+          *trigger_level -= 32;
       } else if (inputs & BTN_SCALE) {
           state = State::SCALE;
       }
@@ -196,25 +280,37 @@ void button_logic() {
 
     case State::SCALE:
       if (inputs & BTN_UP) {
-        view.y_zoom *= 1.1;
+        view->y_zoom *= 1.1;
       } else if (inputs & BTN_DOWN) {
-        view.y_zoom *= 0.9;
+        view->y_zoom *= 0.9;
       } else if (inputs & BTN_RIGHT) {
-        view.x_zoom *= 1.1;
+        view->x_zoom *= 1.1;
       } else if (inputs & BTN_LEFT) {
-        view.x_zoom *= 0.9;
+        view->x_zoom *= 0.9;
       }
       break;
 
     case State::POSITION:
       if (inputs & BTN_UP) {
-        view.y_offset += 50;
+        view->y_offset += 50;
       } else if (inputs & BTN_DOWN) {
-        view.y_offset -= 50;
+        view->y_offset -= 50;
       } else if (inputs & BTN_RIGHT) {
-        view.x_offset += 50;
+        view->x_offset += 50;
       } else if (inputs & BTN_LEFT) {
-        view.x_offset -= 50;
+        view->x_offset -= 50;
+      }
+      break;
+
+    case State::CURSOR:
+      if (inputs & BTN_UP) {
+        cursor_1.y += 5;
+      } else if (inputs & BTN_DOWN) {
+        cursor_1.y -= 5;
+      } else if (inputs & BTN_RIGHT) {
+        cursor_1.x += 5;
+      } else if (inputs & BTN_LEFT) {
+        cursor_1.x -= 5;
       }
       break;
 
@@ -222,11 +318,11 @@ void button_logic() {
         break;
   }
 
-  if (view.x_zoom < 0.1) view.x_zoom = 0.1;
-  if (view.x_zoom > 20)  view.x_zoom = 20;
+  if (view->x_zoom < 0.1) view->x_zoom = 0.1;
+  if (view->x_zoom > 20)  view->x_zoom = 20;
 
-  if (view.y_zoom < 0.1) view.y_zoom = 0.1;
-  if (view.y_zoom > 20)  view.y_zoom = 20;
+  if (view->y_zoom < 0.1) view->y_zoom = 0.1;
+  if (view->y_zoom > 20)  view->y_zoom = 20;
 
   Serial.println((int)state);
 }
@@ -241,12 +337,24 @@ void ui_task(void *pvParameters) {
     if(mutex_take()) {
 
       while(true) {
-        button_logic();
+        if (!ch_states.ch_selected) {
+          button_logic(&triggers.ch1_level, &ch1_view);
+        } else {
+          button_logic(&triggers.ch2_level, &ch2_view);
+        }
         tft.fillScreen(TFT_BLACK);
-        trigger();
         draw_grid();
-        draw_graph();
-        draw_trigger();
+        if (ch_states.ch1_active) {
+          trigger(&rb_ch1, triggers.ch1_level);
+          draw_graph(&rb_ch1, ch1_view, TFT_GREEN);
+          draw_trigger(triggers.ch1_level, ch1_view, TFT_CYAN);
+        }
+        if (ch_states.ch2_active) {
+          trigger(&rb_ch2, triggers.ch2_level);
+          draw_graph(&rb_ch2, ch2_view, TFT_YELLOW);
+          draw_trigger(triggers.ch2_level, ch2_view, TFT_MAGENTA);
+        }
+        draw_cursor(TFT_SKYBLUE);
         vTaskDelay(pdMS_TO_TICKS(100));
       }
 
