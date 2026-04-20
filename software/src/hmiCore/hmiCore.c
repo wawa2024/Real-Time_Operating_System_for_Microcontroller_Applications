@@ -48,7 +48,7 @@
 #define setLow(x)               gpio_set_level((gpio_num_t)x, 0)
 #define read(x)                 gpio_get_level((gpio_num_t)x)
 #define delay_us(x)             //ets_delay_us(x)
-#define delay_ms(x)             //vTaskDelay(pdMS_TO_TICKS(x))
+#define delay_ms(x)             vTaskDelay(pdMS_TO_TICKS(x))
 
 #define clkPulse(x)             do{\
                                     setHigh(CLK);\
