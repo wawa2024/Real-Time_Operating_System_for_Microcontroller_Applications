@@ -1,5 +1,8 @@
 # IDF Component Manager manifest
 
+dependencies:
+  esp32async/asynctcp: "^3.3.3"
+
 build:
   cflags:
     - "-Wno-error=unused-const-variable"
