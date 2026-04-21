@@ -451,6 +451,6 @@ hmiEventData_t getinputs(QueueHandle_t q){
   hmiEventData_t data = {E_NONE,0};
   hmiEventData_t tmp_data = {E_NONE,0};
   delay_ms(17); // 60 Hz
-  while(xQueueReceive(q,&data,0) == pdTRUE) if(tmp_data.event == E_PRESSED) data = tmp_data;
+  while(xQueueReceive(q,&tmp_data,0) == pdTRUE) if(tmp_data.event == E_PRESSED) data=tmp_data;
   return data;
 }
