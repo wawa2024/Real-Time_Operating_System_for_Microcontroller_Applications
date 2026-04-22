@@ -85,6 +85,8 @@ extern SemaphoreHandle_t serial_mutex;
 extern void reset();
 extern bool mutex_take();
 extern bool mutex_release();
+extern bool mutex_delete();
+extern bool mutex_create();
 
 #ifdef __cplusplus
 extern bool mutex_take(SemaphoreHandle_t);

@@ -10,7 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include <Arduino.h>
+#include <esp32-oscilloscope.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -219,6 +219,8 @@ static String reboot(const String& args){
 
 static String kill(const String& args){
   if( delete_task_by_name(args.c_str()) ){
+    mutex_delete();
+    mutex_create();
     return ok(args);
   } else {
     return unknown(args);

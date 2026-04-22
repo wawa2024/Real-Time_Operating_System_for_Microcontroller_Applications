@@ -26,6 +26,18 @@ SemaphoreHandle_t serial_mutex = xSemaphoreCreateMutex();
 
 //////////////////////////// 5.2.Functions /////////////////////////////
 
+bool mutex_delete(){
+  vSemaphoreDelete(screen_mutex);
+  vSemaphoreDelete(inputs_mutex);
+  return true;
+}
+
+bool mutex_create(){
+  screen_mutex = xSemaphoreCreateMutex();
+  inputs_mutex = xSemaphoreCreateMutex();
+  return true;
+}
+
 bool mutex_take(){
   return
       ( xSemaphoreTake(screen_mutex,0) == pdTRUE ) &&
