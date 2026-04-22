@@ -17,6 +17,10 @@
 #define REFRESH_RATE_MS 300
 #define ADC_RESOLUTION 4096
 #define BUF_LEN 10240
+#define ZERO_VOLTS 2048.0
+#define MAX_VOLTS 16.0
+#define TIMESTEP_MS 1
+#define STR_LEN 16
 
 /////////////////////////////// 3.Types ////////////////////////////////
 
@@ -64,6 +68,11 @@ typedef struct {
   boolean en;
 } Cursor;
 
+typedef struct {
+  char x[GRID_COUNT_X-1][STR_LEN];
+  char y[GRID_COUNT_Y-1][STR_LEN];
+} GridValues;
+
 //////////////////////////// 4.Declarations ////////////////////////////
 //////////////////////////// 4.1.Variables /////////////////////////////
 //////////////////////////// 4.2.Functions /////////////////////////////
@@ -102,6 +111,8 @@ Cursor cursor_1 = {
   .y = RESOLUTION_Y / 2,
   .en = false
 };
+
+GridValues grid_values{};
 
 State state = State::TRIGGER;
 
@@ -143,6 +154,20 @@ static void oscilloscope_deinit(){
   mutex_release();
 
   vTaskDelete(NULL); // self-delete
+}
+
+float get_voltage(int y, ViewState view) {
+  if (view.y_zoom == 0.0f)
+    return 0;
+
+  float adjusted = (float)(RESOLUTION_Y - y);
+  float val = (adjusted / view.y_zoom) + view.y_offset;
+
+  if (val < 0.0f) val = 0.0f;
+  if (val > 65535.0f) val = 65535.0f;
+
+  float voltage = MAX_VOLTS*((val-ZERO_VOLTS)/ZERO_VOLTS);
+  return voltage;
 }
 
 void trigger(RingBuffer *rb, uint16_t trigger_level) {
@@ -211,12 +236,34 @@ void draw_graph(RingBuffer *rb, ViewState view, int32_t color) {
   }
 }
 
-void draw_grid() {
+void update_grid() {
+  ViewState view;
+  if (!ch_states.ch_selected) {
+    view = ch1_view;
+  } else {
+    view = ch2_view;
+  }
+	for (uint16_t i = GRID_OFFSET_X; i < RESOLUTION_X; i += GRID_OFFSET_X) {
+		
+	}
+	for (uint16_t i = 0; i < GRID_COUNT_Y-1; i++) {
+    uint16_t y = (i+1) * GRID_OFFSET_Y;
+    float val = get_voltage(y, view);
+    int int_part = (int)val;
+    int frac_part = abs((int)((val - int_part) * 100));
+    snprintf(grid_values.y[i], STR_LEN, "%d.%02d", int_part, frac_part);
+	}
+}
+
+void draw_grid(ViewState view) {
 	for (uint16_t i = GRID_OFFSET_X; i < RESOLUTION_X; i += GRID_OFFSET_X) {
 		tft.drawFastVLine(i, 0, RESOLUTION_Y, TFT_DARKGREY);
 	}
-	for (uint16_t i = GRID_OFFSET_Y; i < RESOLUTION_Y; i += GRID_OFFSET_Y) {
-		tft.drawFastHLine(0, i, RESOLUTION_X, TFT_DARKGREY);
+	for (uint16_t i = 0; i < GRID_COUNT_Y-1; i++) {
+    uint16_t y = (i+1)*GRID_OFFSET_Y;
+		tft.drawFastHLine(0, y, RESOLUTION_X, TFT_DARKGREY);
+    tft.setTextSize(TFT_SMALL);
+    tft.drawString(grid_values.y[i], 10, y-3);
 	}
 }
 
@@ -239,7 +286,7 @@ void button_logic(uint16_t *trigger_level, ViewState *view) {
   } else if ( inputs & BTN_CURSORS ) {
     if (state == State::CURSOR) {
       cursor_1.en = !cursor_1.en;
-      State::POSITION;
+      state = State::POSITION;
     } else {
       cursor_1.en = true;
       state = State::CURSOR;
@@ -252,6 +299,7 @@ void button_logic(uint16_t *trigger_level, ViewState *view) {
       ch_states.ch1_active = false;
       ch_states.ch_selected = true;
     }
+    update_grid();
   } else if ( inputs & BTN_CH2 ) {
     if (!ch_states.ch_selected) {
       ch_states.ch2_active = true;
@@ -260,6 +308,7 @@ void button_logic(uint16_t *trigger_level, ViewState *view) {
       ch_states.ch2_active = false;
       ch_states.ch_selected = false;
     }
+    update_grid();
   }
 
   switch (state) {
@@ -281,24 +330,32 @@ void button_logic(uint16_t *trigger_level, ViewState *view) {
     case State::SCALE:
       if (inputs & BTN_UP) {
         view->y_zoom *= 1.1;
+        update_grid();
       } else if (inputs & BTN_DOWN) {
         view->y_zoom *= 0.9;
+        update_grid();
       } else if (inputs & BTN_RIGHT) {
         view->x_zoom *= 1.1;
+        update_grid();
       } else if (inputs & BTN_LEFT) {
         view->x_zoom *= 0.9;
+        update_grid();
       }
       break;
 
     case State::POSITION:
       if (inputs & BTN_UP) {
         view->y_offset += 50;
+        update_grid();
       } else if (inputs & BTN_DOWN) {
         view->y_offset -= 50;
+        update_grid();
       } else if (inputs & BTN_RIGHT) {
         view->x_offset += 50;
+        update_grid();
       } else if (inputs & BTN_LEFT) {
         view->x_offset -= 50;
+        update_grid();
       }
       break;
 
@@ -329,8 +386,11 @@ void button_logic(uint16_t *trigger_level, ViewState *view) {
 
 void ui_task(void *pvParameters) {
   q = *(QueueHandle_t*)pvParameters;
+  tft.fillScreen(TFT_BLACK);
+//  spr.createSprite(RESOLUTION_X, RESOLUTION_Y);
 
 	xTaskCreate(adc_task, "ADC", 1024, NULL, 1, NULL);
+  update_grid();
 
 	while (true) {
 
@@ -339,11 +399,13 @@ void ui_task(void *pvParameters) {
       while(true) {
         if (!ch_states.ch_selected) {
           button_logic(&triggers.ch1_level, &ch1_view);
+          draw_grid(ch1_view);
         } else {
           button_logic(&triggers.ch2_level, &ch2_view);
+          draw_grid(ch2_view);
         }
         tft.fillScreen(TFT_BLACK);
-        draw_grid();
+//        spr.fillSprite(TFT_BLACK);
         if (ch_states.ch1_active) {
           trigger(&rb_ch1, triggers.ch1_level);
           draw_graph(&rb_ch1, ch1_view, TFT_GREEN);
@@ -355,6 +417,7 @@ void ui_task(void *pvParameters) {
           draw_trigger(triggers.ch2_level, ch2_view, TFT_MAGENTA);
         }
         draw_cursor(TFT_SKYBLUE);
+//        spr.pushSprite(RESOLUTION_X, RESOLUTION_Y);
         vTaskDelay(pdMS_TO_TICKS(100));
       }
 

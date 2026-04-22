@@ -19,6 +19,7 @@
 //////////////////////////// 5.1.Variables /////////////////////////////
 
 TFT_eSPI tft = TFT_eSPI();
+TFT_eSprite spr = TFT_eSprite(&tft);
 SemaphoreHandle_t screen_mutex = xSemaphoreCreateMutex();
 SemaphoreHandle_t inputs_mutex = xSemaphoreCreateMutex();
 SemaphoreHandle_t serial_mutex = xSemaphoreCreateMutex();

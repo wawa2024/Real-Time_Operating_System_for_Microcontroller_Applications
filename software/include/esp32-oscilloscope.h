@@ -69,6 +69,7 @@
 //////////////////////////// 4.1.Variables /////////////////////////////
 
 extern TFT_eSPI tft;
+extern TFT_eSprite spr;
 extern SemaphoreHandle_t screen_mutex;
 extern SemaphoreHandle_t inputs_mutex;
 extern SemaphoreHandle_t serial_mutex;

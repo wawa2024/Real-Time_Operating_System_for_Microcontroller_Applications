@@ -105,7 +105,7 @@ static bool isChildDead(TaskHandle_t t){
 
 void menu_task(void){
 
-  QueueHandle_t q = hmiCore_init(100,250,100);
+  QueueHandle_t q = hmiCore_init(0,0,0);
   uint16_t index = 0;
   TaskHandle_t xHandle = NULL;
 
