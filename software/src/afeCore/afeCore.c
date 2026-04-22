@@ -2,9 +2,9 @@
  * File:        afeCore.c
  * Author:      Juho Rantsi
  * Created:     01.04.2026
- * Description: 
-        afeCore is a library / module for accessing all of the boards analog 
-        inputs and their hardware and virtual functions that are needed in 
+ * Description:
+        afeCore is a library / module for accessing all of the boards analog
+        inputs and their hardware and virtual functions that are needed in
         esp32-oscilloscope project. E.g input sampling, calibration etc...
  *
  * Licensed under the GNU General Public License version 2.
@@ -12,10 +12,10 @@
  *
  *******************************************************************************
  *******************************************************************************
- 
+
  Version history:
- 
-    01.04.2026 JR   
+
+    01.04.2026 JR
         - Library created
 
     22.04.2026 JR
@@ -24,16 +24,17 @@
 
 */
 
+#include <esp32-oscilloscope.h>
 #include "afeCore.h"
 
 // non volatile storage controller for calibration data
 #include "nvs_flash.h"
 #include "nvs.h"
 
-// #include "esp_adc/adc_continuous.h"   
-// #include "esp_adc/adc_cali.h"         
-// #include "esp_adc/adc_cali_scheme.h"  
-// #include "esp_adc/adc_oneshot.h"      
+// #include "esp_adc/adc_continuous.h"
+// #include "esp_adc/adc_cali.h"
+// #include "esp_adc/adc_cali_scheme.h"
+// #include "esp_adc/adc_oneshot.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -117,7 +118,7 @@ typedef struct
 
 //adc_continuous_read( handle, buffer, sizeof(buffer), &bytes_read, portMAX_DELAY );
 
-afeCore_t afeCore = 
+afeCore_t afeCore =
 {
 
 };
@@ -153,22 +154,22 @@ LOCAL void readCalibrationData(void)
         // Data to be stored
         data = i == 0 ? &afeCore.ch1_cal : &afeCore.ch2_cal;
         size_t size = sizeof(data);
-        
+
         // Key for nvs key value pair system
         const char * key = i == 0 ? ch1_storageKey : ch2_storageKey;
-        
+
         // Read data
         err = nvs_get_blob( handle, key, &data, &size );
 
         // No value stored yet
-        if( err == ESP_ERR_NVS_NOT_FOUND ) 
+        if( err == ESP_ERR_NVS_NOT_FOUND )
         {
             // Set default values
             data->zeroOffset = 0;
 
             for( uint32_t i = 0; i < LAST_RANGE; i++ )
             {
-                data->pScaling[i] = 0.0f;            
+                data->pScaling[i] = 0.0f;
                 data->nScaling[i] = 0.0f;
             }
         }
@@ -194,13 +195,13 @@ LOCAL void writeCalibrationData(void)
         // Data to be stored
         data = i == 0 ? &afeCore.ch1_cal : &afeCore.ch2_cal;
         size_t size = sizeof(data);
-        
+
         // Key for nvs key value pair system
         const char * key = i == 0 ? ch1_storageKey : ch2_storageKey;
-        
+
         // Prepare data
         nvs_set_blob( handle, key, data, size );
-        
+
         // Write data
         nvs_commit( handle );
     }
@@ -217,8 +218,8 @@ LOCAL void calibrationDataInit(void)
     // Initialize NVS
     esp_err_t err = nvs_flash_init();
 
-    if( err == ESP_ERR_NVS_NO_FREE_PAGES 
-    ||  err == ESP_ERR_NVS_NEW_VERSION_FOUND ) 
+    if( err == ESP_ERR_NVS_NO_FREE_PAGES
+    ||  err == ESP_ERR_NVS_NEW_VERSION_FOUND )
     {
         // Try to reinitialize flash
         nvs_flash_erase();
@@ -254,14 +255,14 @@ void afeCore_init(void)
 {
     calibrationDataInit();
 
-    // adc_continuous_handle_cfg_t handle_cfg = 
+    // adc_continuous_handle_cfg_t handle_cfg =
     // {
     //     .max_store_buf_size = SAMPLE_BUFF_SIZE,
     //     .conv_frame_size    = SAMPLE_BUFF_SIZE,
     // };
     // ESP_ERROR_CHECK(adc_continuous_new_handle(&handle_cfg, &s_adc_handle));
 
-    // adc_digi_pattern_config_t pattern = 
+    // adc_digi_pattern_config_t pattern =
     // {
     //     // ADC attenuation: 12dB => full range 0-3.3V
     //     .atten     = ADC_ATTEN_DB_12,
@@ -273,10 +274,10 @@ void afeCore_init(void)
     //     .bit_width = ADC_BITWIDTH_12,
     // };
 
-    // adc_continuous_config_t dig_cfg = 
+    // adc_continuous_config_t dig_cfg =
     // {
     //     // 200 ksps
-    //     .sample_freq_hz = 200000,        
+    //     .sample_freq_hz = 200000,
     //     // Only one adc is used (ADC1)
     //     .conv_mode      = ADC_CONV_SINGLE_UNIT_1,
     //     // 12-bit conversion + 4-bit channel ID
@@ -294,7 +295,7 @@ void afeCore_init(void)
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-// Deinitializes afeCore, which includes removing the active task 
+// Deinitializes afeCore, which includes removing the active task
 // and stops timerX
 void afeCore_deinit(void)
 {
@@ -313,7 +314,7 @@ void afeCore_logError( afeErr_t err )
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-// Sets the trigger voltage level 
+// Sets the trigger voltage level
 afeErr_t afeCore_setTriggerLevel( double voltage )
 {
 
@@ -375,7 +376,7 @@ afeErr_t afeCore_setTriggerHoldoff( uint32_t holdoff_ms )
 ////////////////////////////////////////////////////////////////////////////////
 
 // Sets the amount of time over which samples are saved before and after trigger
-afeErr_t afeCore_setTriggerLength( uint32_t postTriggerLength_ms, 
+afeErr_t afeCore_setTriggerLength( uint32_t postTriggerLength_ms,
                                    uint32_t preTriggerLength_ms )
 {
 
@@ -410,10 +411,10 @@ uint32_t afeCore_getSampleRate(void)
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-// Takes the buffers where samples are copied to and the number of wanted 
-// samples. Both buffers should be the same size and their length should 
+// Takes the buffers where samples are copied to and the number of wanted
+// samples. Both buffers should be the same size and their length should
 // not exceed the given n. Returns the number of samples actually copied
-uint32_t afeCore_getNewestSamples( uint16_t *ch1_buffer, uint16_t *ch2_buffer, 
+uint32_t afeCore_getNewestSamples( uint16_t *ch1_buffer, uint16_t *ch2_buffer,
                                    uint32_t n )
 {
 
@@ -426,9 +427,9 @@ uint32_t afeCore_getNewestSamples( uint16_t *ch1_buffer, uint16_t *ch2_buffer,
 // (triggerIndex - preTriggerLength) to (triggerIndex + postTriggerLength) or
 // until the end of the given buffer is hit, whichever comes first.
 // Takes the buffers where samples are copied to and the size of the buffers.
-// Both buffers should be the same size and their length should not exceed 
+// Both buffers should be the same size and their length should not exceed
 // the given n. Returns the number of samples actually copied.
-uint32_t afeCore_getTriggerBuffer( uint16_t *ch1_buffer, uint16_t *ch2_buffer, 
+uint32_t afeCore_getTriggerBuffer( uint16_t *ch1_buffer, uint16_t *ch2_buffer,
                                    uint32_t n )
 {
 
@@ -437,7 +438,7 @@ uint32_t afeCore_getTriggerBuffer( uint16_t *ch1_buffer, uint16_t *ch2_buffer,
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-// Takes in a sample and converts it to voltage. 
+// Takes in a sample and converts it to voltage.
 // Returns the voltage as double
 double afeCore_convertSampleToVoltage( uint16_t sample )
 {

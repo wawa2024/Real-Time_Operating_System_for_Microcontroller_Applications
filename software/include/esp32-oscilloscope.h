@@ -3,9 +3,13 @@
 // Device related macros
 ///////////////////////////// 1.Libraries //////////////////////////////
 
+#ifdef __cplusplus
 #include <Arduino.h>
 #include <TFT_eSPI.h> // Graphics and font library for ST7735 driver chip
 #include <SPI.h>
+#else
+#include <stdbool.h>
+#endif
 
 #ifndef ESP32_OSCILLOSCOPE_H
 #define ESP32_OSCILLOSCOPE_H
@@ -68,19 +72,24 @@
 //////////////////////////// 4.Declarations ////////////////////////////
 //////////////////////////// 4.1.Variables /////////////////////////////
 
+#ifdef __cplusplus
 extern TFT_eSPI tft;
 extern TFT_eSprite spr;
 extern SemaphoreHandle_t screen_mutex;
 extern SemaphoreHandle_t inputs_mutex;
 extern SemaphoreHandle_t serial_mutex;
+#endif
 
 //////////////////////////// 4.2.Functions /////////////////////////////
 
 extern void reset();
 extern bool mutex_take();
 extern bool mutex_release();
+
+#ifdef __cplusplus
 extern bool mutex_take(SemaphoreHandle_t);
 extern bool mutex_release(SemaphoreHandle_t);
+#endif
 
 //////////////////////////// 5.Definitions /////////////////////////////
 //////////////////////////// 5.1.Variables /////////////////////////////
