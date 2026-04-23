@@ -129,7 +129,7 @@ void adc_task(void *pvParameters) {
 //  memset(rb.samples, 64, sizeof(rb.samples));
   
   // REMOVE WHEN NO LONGER NEEDED
-  //afeCore_t *afeCore = afeCore_getCore(); 
+  afeCore_t *afeCore = afeCore_getCore(); 
 
   // ADC INITIALIZATION WITH NEW DRIVERS IN AFECORE_INIT()
   //adc2_config_channel_atten(ADC2_CHANNEL_8, ADC_ATTEN_DB_12);
@@ -140,16 +140,16 @@ void adc_task(void *pvParameters) {
     if (ch_states.ch1_active) {
       int ch1_reading;
 
-      //adc_oneshot_read( afeCore->ch1_handle, ADC_CHANNEL_8, &ch1_reading );
+      adc_oneshot_read( afeCore->ch1_handle, ADC_CHANNEL_8, &ch1_reading );
       
-      if( adc2_get_raw(ADC2_CHANNEL_8, ADC_WIDTH_BIT_12, &ch1_reading) == ESP_OK) {
+      //if( adc2_get_raw(ADC2_CHANNEL_8, ADC_WIDTH_BIT_12, &ch1_reading) == ESP_OK) {
         add_sample((uint16_t)ch1_reading, &rb_ch1);
-      }
+      //}
     }
     if (ch_states.ch2_active) {
-      //int ch2_reading; 
-      //adc_oneshot_read( afeCore->ch2_handle, ADC_CHANNEL_5, &ch2_reading );
-      uint16_t ch2_reading = adc1_get_raw(ADC1_CHANNEL_5);
+      int ch2_reading; 
+      adc_oneshot_read( afeCore->ch2_handle, ADC_CHANNEL_5, &ch2_reading );
+      //uint16_t ch2_reading = adc1_get_raw(ADC1_CHANNEL_5);
       add_sample(ch2_reading, &rb_ch2);
     }
 

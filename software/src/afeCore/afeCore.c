@@ -36,9 +36,9 @@
 //#include <esp32-oscilloscope.h>
 //#include "hmiCore.h"
 
-// #include "esp_adc/adc_cali.h"
-// #include "esp_adc/adc_cali_scheme.h"
-// #include "esp_adc/adc_oneshot.h"
+//#include "esp_adc/adc_cali.h"
+//#include "esp_adc/adc_cali_scheme.h"
+//#include "esp_adc/adc_oneshot.h"
 
 #include <driver/adc.h>
 
@@ -77,10 +77,10 @@ afeCore_t afeCore =
     .ch2_sampleBuffer = {0},
     .ch1_cal = {0},
     .ch2_cal = {0},
-    // .ch1_handle = 0,
-    // .ch2_handle = 0,
-    // .ch1_calHandle = 0,
-    // .ch2_calHandle = 0,
+    .ch1_handle = 0,
+    .ch2_handle = 0,
+    .ch1_calHandle = 0,
+    .ch2_calHandle = 0,
     .isCh1Disabled = false,
     .isInitialized = false,
 };
@@ -275,38 +275,38 @@ void afeCore_init(void)
     afeCore_setChannelRange( RANGE_15V, CHANNEL_1 );
     afeCore_setChannelRange( RANGE_15V, CHANNEL_2 );
 
-    adc2_config_channel_atten(ADC2_CHANNEL_8, ADC_ATTEN_DB_12);
-    adc1_config_width(ADC_WIDTH_BIT_12);
-    adc1_config_channel_atten(ADC1_CHANNEL_5, ADC_ATTEN_DB_12);
+    // adc2_config_channel_atten(ADC2_CHANNEL_8, ADC_ATTEN_DB_12);
+    // adc1_config_width(ADC_WIDTH_BIT_12);
+    // adc1_config_channel_atten(ADC1_CHANNEL_5, ADC_ATTEN_DB_12);
 
-    // adc_oneshot_chan_cfg_t chan_cfg = 
-    // {
-    //     // 12‑bit resolution 
-    //     .bitwidth = ADC_BITWIDTH_DEFAULT,   
-    //     // Full scale input (0-3.3V)
-    //     .atten = ADC_ATTEN_DB_12,           
-    // };
+    adc_oneshot_chan_cfg_t chan_cfg = 
+    {
+        // 12‑bit resolution 
+        .bitwidth = ADC_BITWIDTH_DEFAULT,   
+        // Full scale input (0-3.3V)
+        .atten = ADC_ATTEN_DB_12,           
+    };
 
-    // // ADC1 INIT
-    // adc_oneshot_unit_init_cfg_t adc1_cfg = 
-    // {
-    //     .unit_id = ADC_UNIT_1,
-    //     .clk_src = ADC_DIGI_CLK_SRC_DEFAULT,
-    //     .ulp_mode = ADC_ULP_MODE_DISABLE,
-    // };
+    // ADC1 INIT
+    adc_oneshot_unit_init_cfg_t adc1_cfg = 
+    {
+        .unit_id = ADC_UNIT_1,
+        .clk_src = ADC_DIGI_CLK_SRC_DEFAULT,
+        .ulp_mode = ADC_ULP_MODE_DISABLE,
+    };
 
-    // adc_oneshot_new_unit( &adc1_cfg, &afeCore.ch2_handle );
-    // adc_oneshot_config_channel( afeCore.ch2_handle, ADC_CHANNEL_0, &chan_cfg );
+    adc_oneshot_new_unit( &adc1_cfg, &afeCore.ch2_handle );
+    adc_oneshot_config_channel( afeCore.ch2_handle, CH2_VOLTAGE, &chan_cfg );
 
-    // // ADC2 INIT
-    // adc_oneshot_unit_init_cfg_t adc2_cfg = 
-    // {
-    //     .unit_id = ADC_UNIT_2,
-    //     .clk_src = ADC_DIGI_CLK_SRC_DEFAULT,
-    //     .ulp_mode = ADC_ULP_MODE_DISABLE,
-    // };
-    // adc_oneshot_new_unit( &adc2_cfg, &afeCore.ch1_handle );
-    // adc_oneshot_config_channel( afeCore.ch1_handle, ADC_CHANNEL_2, &chan_cfg );
+    // ADC2 INIT
+    adc_oneshot_unit_init_cfg_t adc2_cfg = 
+    {
+        .unit_id = ADC_UNIT_2,
+        .clk_src = ADC_DIGI_CLK_SRC_DEFAULT,
+        .ulp_mode = ADC_ULP_MODE_DISABLE,
+    };
+    adc_oneshot_new_unit( &adc2_cfg, &afeCore.ch1_handle );
+    adc_oneshot_config_channel( afeCore.ch1_handle, CH1_VOLTAGE, &chan_cfg );
 
     // // Calibration 
     // adc_cali_line_fitting_config_t ch1_calCfg = 
