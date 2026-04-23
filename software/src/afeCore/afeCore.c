@@ -57,7 +57,7 @@
 
 afeCore_t afeCore =
 {
-    .trigger = 
+    .trigger =
     {
         .level = 0,
         .mode = NO_TRIGGER,
@@ -71,7 +71,7 @@ afeCore_t afeCore =
     },
     .sampleRate = 1000,
     .ch1_range = RANGE_5V,
-    .ch2_range = RANGE_5V, 
+    .ch2_range = RANGE_5V,
     .currentSampleIndex = 0,
     .ch1_sampleBuffer = {0},
     .ch2_sampleBuffer = {0},
@@ -210,7 +210,7 @@ LOCAL void calibrationDataInit(void)
 //         if( e.inputs & (1 << BTN_ESC) )
 //         {
 //             mutex_release();
-//             vTaskDelete(NULL); 
+//             vTaskDelete(NULL);
 //         }
 //     }
 
@@ -231,13 +231,13 @@ LOCAL void calibrationDataInit(void)
 //         if( e.inputs & (1 << BTN_ESC) )
 //         {
 //             mutex_release();
-//             vTaskDelete(NULL); 
+//             vTaskDelete(NULL);
 //         }
 //         if( e.inputs & (1 << BTN_ENTER) ) { break; }
 //     }
 
 //     // Average samples over 2 seconds
-//     // TODO: Change this to wait for ~2 seconds 
+//     // TODO: Change this to wait for ~2 seconds
 //     // and use afeCore_getNewestSamples( n = 2*afeCore.sampleRate );
 //     for( uint32_t i = 0; i < (2 * afeCore.sampleRate); i++ )
 //     {
@@ -252,7 +252,7 @@ LOCAL void calibrationDataInit(void)
 
 //     mutex_release();
 //     // self-delete
-//     vTaskDelete(NULL); 
+//     vTaskDelete(NULL);
 // }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -279,16 +279,16 @@ void afeCore_init(void)
     adc1_config_width(ADC_WIDTH_BIT_12);
     adc1_config_channel_atten(ADC1_CHANNEL_5, ADC_ATTEN_DB_12);
 
-    // adc_oneshot_chan_cfg_t chan_cfg = 
+    // adc_oneshot_chan_cfg_t chan_cfg =
     // {
-    //     // 12‑bit resolution 
-    //     .bitwidth = ADC_BITWIDTH_DEFAULT,   
+    //     // 12‑bit resolution
+    //     .bitwidth = ADC_BITWIDTH_DEFAULT,
     //     // Full scale input (0-3.3V)
-    //     .atten = ADC_ATTEN_DB_12,           
+    //     .atten = ADC_ATTEN_DB_12,
     // };
 
     // // ADC1 INIT
-    // adc_oneshot_unit_init_cfg_t adc1_cfg = 
+    // adc_oneshot_unit_init_cfg_t adc1_cfg =
     // {
     //     .unit_id = ADC_UNIT_1,
     //     .clk_src = ADC_DIGI_CLK_SRC_DEFAULT,
@@ -299,7 +299,7 @@ void afeCore_init(void)
     // adc_oneshot_config_channel( afeCore.ch2_handle, ADC_CHANNEL_0, &chan_cfg );
 
     // // ADC2 INIT
-    // adc_oneshot_unit_init_cfg_t adc2_cfg = 
+    // adc_oneshot_unit_init_cfg_t adc2_cfg =
     // {
     //     .unit_id = ADC_UNIT_2,
     //     .clk_src = ADC_DIGI_CLK_SRC_DEFAULT,
@@ -308,14 +308,14 @@ void afeCore_init(void)
     // adc_oneshot_new_unit( &adc2_cfg, &afeCore.ch1_handle );
     // adc_oneshot_config_channel( afeCore.ch1_handle, ADC_CHANNEL_2, &chan_cfg );
 
-    // // Calibration 
-    // adc_cali_line_fitting_config_t ch1_calCfg = 
+    // // Calibration
+    // adc_cali_line_fitting_config_t ch1_calCfg =
     // {
     //     .unit_id = ADC_UNIT_1,
     //     .atten = ADC_ATTEN_DB_12,
     //     .bitwidth = ADC_BITWIDTH_DEFAULT,
     // };
-    // adc_cali_line_fitting_config_t ch2_calCfg = 
+    // adc_cali_line_fitting_config_t ch2_calCfg =
     // {
     //     .unit_id = ADC_UNIT_2,
     //     .atten = ADC_ATTEN_DB_12,

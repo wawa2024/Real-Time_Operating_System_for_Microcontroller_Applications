@@ -149,8 +149,12 @@ void wifi_init() {
   ESP_LOGI(TAG,"SSID=%s PASS=%s",AP_SSID,AP_PASS);
   esp_netif_ip_info_t ip_info;
   esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF"); // or "WIFI_AP_DEF"
-  if (netif && esp_netif_get_ip_info(netif, &ip_info) == ESP_OK) {
-    ESP_LOGI(TAG, "IP=" IPSTR, IP2STR(&ip_info.ip));
+
+  if (netif) {
+    if (esp_netif_get_ip_info(netif, &ip_info) == ESP_OK) {
+      ESP_LOGI(TAG, "IP=" IPSTR, IP2STR(&ip_info.ip));
+    }
+    esp_netif_dhcps_start(netif);
   }
 
 }
@@ -159,6 +163,7 @@ void wifi_deinit() {
 #ifdef DEBUG
   ESP_LOGI(TAG,"wifi_deinit");
 #endif
+
   ESP_ERROR_CHECK(esp_wifi_stop());
   ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_NULL));
   ESP_ERROR_CHECK(esp_wifi_deinit());
@@ -169,11 +174,13 @@ void wifi_deinit() {
     esp_netif_dhcps_stop(ap);
     esp_netif_destroy(ap);
   }
+
   esp_netif_t *sta = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
   if (sta) {
     esp_netif_dhcpc_stop(sta);
     esp_netif_destroy(sta);
   }
+
   esp_netif_deinit();
 }
 
