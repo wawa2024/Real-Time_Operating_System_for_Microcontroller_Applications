@@ -26,21 +26,9 @@
 
 #include <afeCore.h>
 
-
-
 // non volatile storage controller for calibration data
 #include "nvs_flash.h"
 #include "nvs.h"
-
-// moved to afeCalib.cpp
-//#include <esp32-oscilloscope.h>
-//#include "hmiCore.h"
-
-//#include "esp_adc/adc_cali.h"
-//#include "esp_adc/adc_cali_scheme.h"
-//#include "esp_adc/adc_oneshot.h"
-
-#include <driver/adc.h>
 
 #include "driver/gpio.h"
 
@@ -359,6 +347,24 @@ void afeCore_enableChannel1(void)
 void afeCore_disableChannel1(void)
 {
     afeCore.isCh1Disabled = true;
+}
+
+//////////////////////////////////////
+//////////////////////////////////////
+
+bool afeCore_isChannel1Disabled(void)
+{
+    return afeCore.isCh1Disabled;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+adc_oneshot_unit_handle_t afeCore_getChannelAdcHandle( afeChannel_t channel )
+{
+    if( channel == CHANNEL_1 ) { return afeCore.ch1_handle; }
+    else { return afeCore.ch2_handle; }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

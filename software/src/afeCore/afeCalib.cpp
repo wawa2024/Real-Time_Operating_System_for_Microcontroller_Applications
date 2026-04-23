@@ -28,10 +28,6 @@
 // User input
 #include "hmiCore.h"
 
-//#include "esp_adc/adc_cali.h"
-//#include "esp_adc/adc_cali_scheme.h"
-//#include "esp_adc/adc_oneshot.h"
-
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -50,9 +46,6 @@ void afeCore_calibrationTask( void* pvParameter )
     if( pvParameter == NULL ) { vTaskDelete(NULL); }
 
     QueueHandle_t q = *(QueueHandle_t*)pvParameter;
-
-    // Remove this when direct access to the struct is no longer needed
-    afeCore_t *afeCore = afeCore_getCore();
 
     while( !afeCore_isInitialized() )
     {
@@ -97,16 +90,9 @@ void afeCore_calibrationTask( void* pvParameter )
     for( uint32_t i = 0; i < (2 * afeCore_getSampleRate()); i++ )
     {
         int ch1_sample = 0, ch2_sample = 0;
-        int ch1_mv = 0, ch2_mv = 0;
 
-        //ch2_sample = adc1_get_raw( CH2_VOLTAGE ); 
-        //adc2_get_raw( CH1_VOLTAGE, ADC_WIDTH_BIT_12, &ch1_sample ); 
-
-        adc_oneshot_read( afeCore->ch1_handle, CH1_VOLTAGE, &ch1_sample );
-        adc_oneshot_read( afeCore->ch2_handle, CH2_VOLTAGE, &ch2_sample );
-
-        // adc_cali_raw_to_voltage( afeCore->ch1_calHandle, ch1_sample, &ch1_mv );
-        // adc_cali_raw_to_voltage( afeCore->ch2_calHandle, ch2_sample, &ch2_mv );
+        adc_oneshot_read( afeCore_getChannelAdcHandle(CHANNEL_1), CH1_VOLTAGE, &ch1_sample );
+        adc_oneshot_read( afeCore_getChannelAdcHandle(CHANNEL_2), CH2_VOLTAGE, &ch2_sample );
 
         ch1_sum += ch1_sample;
         ch2_sum += ch2_sample;
@@ -115,8 +101,8 @@ void afeCore_calibrationTask( void* pvParameter )
     ch1_sum /= (2 * afeCore_getSampleRate());
     ch2_sum /= (2 * afeCore_getSampleRate());
 
-    char ch1_sumString[10];
-    char ch2_sumString[10];
+    char ch1_sumString[20];
+    char ch2_sumString[20];
 
     std::snprintf( ch1_sumString, sizeof(ch1_sumString), "CH1: %ld", ch1_sum );
     std::snprintf( ch2_sumString, sizeof(ch2_sumString), "CH2: %ld", ch2_sum );

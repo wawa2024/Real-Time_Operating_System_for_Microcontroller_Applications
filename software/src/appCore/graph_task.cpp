@@ -4,7 +4,6 @@
 ///////////////////////////// 1.Libraries //////////////////////////////
 
 #include <esp32-oscilloscope.h>
-#include <driver/adc.h>
 #include <driver/timer.h>
 #include <hmiCore.h>
 #include "afeCore.h"
@@ -81,6 +80,8 @@ typedef struct {
 
 static QueueHandle_t q = NULL;
 
+TaskHandle_t adc;
+
 //////////////////////////// 5.1.Variables /////////////////////////////
 
 RingBuffer rb_ch1{};
@@ -125,32 +126,17 @@ void add_sample(uint16_t v, RingBuffer *rb) {
 }
 
 void adc_task(void *pvParameters) {
-  // ADC1 (GPIO34)
-//  memset(rb.samples, 64, sizeof(rb.samples));
-  
-  // REMOVE WHEN NO LONGER NEEDED
-  afeCore_t *afeCore = afeCore_getCore(); 
-
-  // ADC INITIALIZATION WITH NEW DRIVERS IN AFECORE_INIT()
-  //adc2_config_channel_atten(ADC2_CHANNEL_8, ADC_ATTEN_DB_12);
-  //adc1_config_width(ADC_WIDTH_BIT_12);
-  //adc1_config_channel_atten(ADC1_CHANNEL_5, ADC_ATTEN_DB_12);
-
 	while (true) {
     if (ch_states.ch1_active) {
       int ch1_reading;
-
-      adc_oneshot_read( afeCore->ch1_handle, ADC_CHANNEL_8, &ch1_reading );
-      
-      //if( adc2_get_raw(ADC2_CHANNEL_8, ADC_WIDTH_BIT_12, &ch1_reading) == ESP_OK) {
-        add_sample((uint16_t)ch1_reading, &rb_ch1);
-      //}
+      adc_oneshot_read( afeCore_getChannelAdcHandle( CHANNEL_1 ), ADC_CHANNEL_8, &ch1_reading );
+      if( afeCore_isChannel1Disabled() ){ add_sample(0, &rb_ch1); }
+      else{ add_sample((uint16_t)ch1_reading, &rb_ch1); }
     }
     if (ch_states.ch2_active) {
       int ch2_reading; 
-      adc_oneshot_read( afeCore->ch2_handle, ADC_CHANNEL_5, &ch2_reading );
-      //uint16_t ch2_reading = adc1_get_raw(ADC1_CHANNEL_5);
-      add_sample(ch2_reading, &rb_ch2);
+      adc_oneshot_read( afeCore_getChannelAdcHandle( CHANNEL_2 ), ADC_CHANNEL_5, &ch2_reading );
+      add_sample((uint16_t)ch2_reading, &rb_ch2);
     }
 
 		vTaskDelay(pdMS_TO_TICKS(1));
@@ -164,6 +150,7 @@ static void oscilloscope_deinit(){
 
   mutex_release();
 
+  vTaskDelete(adc);
   vTaskDelete(NULL); // self-delete
 }
 
@@ -396,43 +383,41 @@ void button_logic(uint16_t *trigger_level, ViewState *view) {
 }
 
 void ui_task(void *pvParameters) {
+  
   q = *(QueueHandle_t*)pvParameters;
+ 
+  while( !mutex_take() ) { DELAY(100); }
+
+  update_grid();
+  
   tft.fillScreen(TFT_BLACK);
 //  spr.createSprite(RESOLUTION_X, RESOLUTION_Y);
 
-	xTaskCreate(adc_task, "ADC", 1024, NULL, 1, NULL);
-  update_grid();
+	xTaskCreate( adc_task, "ADC", 4096, NULL, 1, &adc );
 
-	while (true) {
-
-    if(mutex_take()) {
-
-      while(true) {
-        if (!ch_states.ch_selected) {
-          button_logic(&triggers.ch1_level, &ch1_view);
-          draw_grid(ch1_view);
-        } else {
-          button_logic(&triggers.ch2_level, &ch2_view);
-          draw_grid(ch2_view);
-        }
-        tft.fillScreen(TFT_BLACK);
-//        spr.fillSprite(TFT_BLACK);
-        if (ch_states.ch1_active) {
-          trigger(&rb_ch1, triggers.ch1_level);
-          draw_graph(&rb_ch1, ch1_view, TFT_GREEN);
-          draw_trigger(triggers.ch1_level, ch1_view, TFT_CYAN);
-        }
-        if (ch_states.ch2_active) {
-          trigger(&rb_ch2, triggers.ch2_level);
-          draw_graph(&rb_ch2, ch2_view, TFT_YELLOW);
-          draw_trigger(triggers.ch2_level, ch2_view, TFT_MAGENTA);
-        }
-        draw_cursor(TFT_SKYBLUE);
-//        spr.pushSprite(RESOLUTION_X, RESOLUTION_Y);
-        vTaskDelay(pdMS_TO_TICKS(100));
-      }
-
+  while(true) {
+    if (!ch_states.ch_selected) {
+      button_logic(&triggers.ch1_level, &ch1_view);
+      draw_grid(ch1_view);
+    } else {
+      button_logic(&triggers.ch2_level, &ch2_view);
+      draw_grid(ch2_view);
     }
+    tft.fillScreen(TFT_BLACK);
+//        spr.fillSprite(TFT_BLACK);
+    if (ch_states.ch1_active) {
+      trigger(&rb_ch1, triggers.ch1_level);
+      draw_graph(&rb_ch1, ch1_view, TFT_GREEN);
+      draw_trigger(triggers.ch1_level, ch1_view, TFT_CYAN);
+    }
+    if (ch_states.ch2_active) {
+      trigger(&rb_ch2, triggers.ch2_level);
+      draw_graph(&rb_ch2, ch2_view, TFT_YELLOW);
+      draw_trigger(triggers.ch2_level, ch2_view, TFT_MAGENTA);
+    }
+    draw_cursor(TFT_SKYBLUE);
+//        spr.pushSprite(RESOLUTION_X, RESOLUTION_Y);
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
 
-	}
 }

@@ -27,8 +27,6 @@
 #include "esp_adc/adc_cali_scheme.h"
 #include "esp_adc/adc_oneshot.h"
 
-//#include <driver/adc.h>
-
 #ifndef AFE_CORE_H
 #define AFE_CORE_H
 
@@ -189,9 +187,12 @@ extern void afeCore_deinit(void);
 
 extern bool afeCore_isInitialized(void);
 
+extern adc_oneshot_unit_handle_t afeCore_getChannelAdcHandle( afeChannel_t channel );
+
 // Used to disable and enable channel 1 when WIFI is used
 extern void afeCore_enableChannel1(void);
 extern void afeCore_disableChannel1(void);
+extern bool afeCore_isChannel1Disabled(void);
 
 // Prints an appropriate error message to console.
 extern void afeCore_logError( afeErr_t err );
