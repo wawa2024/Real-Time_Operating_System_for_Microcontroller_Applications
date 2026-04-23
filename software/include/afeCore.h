@@ -21,11 +21,35 @@
 */
 
 #include <stdint.h>
-
 #include <stdbool.h>
+
+#include "esp_adc/adc_cali.h"
+#include "esp_adc/adc_cali_scheme.h"
+#include "esp_adc/adc_oneshot.h"
 
 #ifndef AFE_CORE_H
 #define AFE_CORE_H
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+// CH1 => ADC2, CH2 => ADC1
+
+// Pin numbers for the analog frontends
+#define CH1_RANGE_SEL   26
+// Physical pin
+//#define CH1_VOLTAGE     25
+// ADC channel
+#define CH1_VOLTAGE     ADC_CHANNEL_8
+
+#define CH2_RANGE_SEL   21
+// Physical pin
+//#define CH2_VOLTAGE     33
+// ADC channel
+#define CH2_VOLTAGE     ADC_CHANNEL_5
+
+// Number of values stored in ch1 and ch2 sample buffer
+#define SAMPLE_BUFFER_SIZE 10
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -39,7 +63,9 @@ typedef enum
     // Given trigger length out of bounds
     TRIGGER_LENGTH_BOUNDS,
     // Given channel is not valid
-    TRIGGER_CHANNEL_INVALID,
+    CHANNEL_INVALID,
+    // Given range is not valid
+    RANGE_INVALID,
     // Function parameter was NULL
     NULL_PTR_ERR,
 
@@ -50,7 +76,6 @@ typedef enum
     RISING_EDGE_TRIGGER,
     FALLING_EDGE_TRIGGER,
     BOTH_EDGE_TRIGGER,
-
 } afeTrigType_t;
 
 typedef enum
@@ -68,12 +93,81 @@ typedef enum
     LAST_RANGE
 } afeRange_t;
 
+typedef enum
+{
+    CHANNEL_1 = 0,
+    CHANNEL_2,
+    LAST_CHANNEL
+} afeChannel_t;
+
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
+typedef struct
+{
+    int32_t zeroOffset[LAST_RANGE];
+    // Different scaling values for each range
+    // and for positive and negative values
+    float pScaling[LAST_RANGE];
+    float nScaling[LAST_RANGE];
+} afeChannelCal_t;
+
+//////////////////////////////////////
+//////////////////////////////////////
+
+typedef struct
+{
+    struct
+    {
+        uint32_t level;
+        afeTrigMode_t mode;
+        afeTrigType_t type;
+        uint32_t selectedChannel;
+        uint32_t postTrigLen;
+        uint32_t preTrigLen;
+        bool isTriggered;
+        uint32_t triggerIndex;
+        uint32_t holdoff;
+    } trigger;
+
+    const uint32_t sampleRate;
+
+    afeRange_t ch1_range;
+    afeRange_t ch2_range;
+
+    uint32_t currentSampleIndex;
+    uint16_t ch1_sampleBuffer[SAMPLE_BUFFER_SIZE];
+    uint16_t ch2_sampleBuffer[SAMPLE_BUFFER_SIZE];
+
+    // caliration values for ch1 and ch2
+    afeChannelCal_t ch1_cal;
+    afeChannelCal_t ch2_cal;
+
+    adc_oneshot_unit_handle_t ch1_handle;
+    adc_oneshot_unit_handle_t ch2_handle;
+
+    bool isCh1Disabled;
+
+    bool isInitialized;
+
+} afeCore_t;
+
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+#ifdef __cplusplus
+    extern "C" {
+#endif
+
+// Temporarily used for calibration ( until afeCore is finalized )
+// REMOVE WHEN NO LONGER NEEDED
+extern afeCore_t* afeCore_getCore(void);
+
+
+
 // Used to calibrate both analog frontends.
-// Takes control over the screen and returns when the calibration is done.
-extern void afeCore_calibrate(void);
+extern void afeCore_calibrationTask( void* pvParameter );
 
 // Initializes afeCore and configures hardware timerX for use in this library
 extern void afeCore_init(void);
@@ -82,6 +176,12 @@ extern void afeCore_init(void);
 // and stops timerX
 extern void afeCore_deinit(void);
 
+extern bool afeCore_isInitialized(void);
+
+// Used to disable and enable channel 1 when WIFI is used
+extern void afeCore_enableChannel1(void);
+extern void afeCore_disableChannel1(void);
+
 // Prints an appropriate error message to console.
 extern void afeCore_logError( afeErr_t err );
 
@@ -89,7 +189,7 @@ extern void afeCore_logError( afeErr_t err );
 extern afeErr_t afeCore_setTriggerLevel( double voltage );
 
 // Sets the channel that is used to trigger on
-extern afeErr_t afeCore_setTriggerChannel( uint32_t channel );
+extern afeErr_t afeCore_setTriggerChannel( afeChannel_t channel );
 
 // Sets the trigger mode used. ( Single, Auto, Repeat... )
 extern afeErr_t afeCore_setTriggerMode( afeTrigMode_t mode );
@@ -107,8 +207,9 @@ extern afeErr_t afeCore_setTriggerLength( uint32_t postTriggerLength_ms,
                                    uint32_t preTriggerLength_ms );
 
 // Sets the input range for the given channel. ( x0.1, x0.3 )
-extern afeErr_t afeCore_setChannelRange( afeRange_t range, uint32_t channel );
-extern afeRange_t afeCore_getChannelRange( uint32_t channel );
+extern afeErr_t afeCore_setChannelRange( afeRange_t range, 
+                                         afeChannel_t channel );
+extern afeRange_t afeCore_getChannelRange( afeChannel_t channel );
 
 // Returns the current sample rate in samples per second.
 extern uint32_t afeCore_getSampleRate(void);
@@ -133,6 +234,10 @@ extern uint32_t afeCore_getTriggerBuffer( uint16_t *ch1_buffer,
 // Takes in a sample and converts it to voltage. 
 // Returns the voltage as double
 extern double afeCore_convertSampleToVoltage( uint16_t sample );
+
+#ifdef __cplusplus
+}
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////

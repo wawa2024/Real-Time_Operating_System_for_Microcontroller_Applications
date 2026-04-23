@@ -24,17 +24,23 @@
 
 */
 
-#include <esp32-oscilloscope.h>
-#include "afeCore.h"
+#include <afeCore.h>
+
+
 
 // non volatile storage controller for calibration data
 #include "nvs_flash.h"
 #include "nvs.h"
 
-// #include "esp_adc/adc_continuous.h"
-// #include "esp_adc/adc_cali.h"
-// #include "esp_adc/adc_cali_scheme.h"
-// #include "esp_adc/adc_oneshot.h"
+// moved to afeCalib.cpp
+//#include <esp32-oscilloscope.h>
+//#include "hmiCore.h"
+
+#include "esp_adc/adc_cali.h"
+#include "esp_adc/adc_cali_scheme.h"
+#include "esp_adc/adc_oneshot.h"
+
+#include "driver/gpio.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -43,80 +49,9 @@
     #define LOCAL   static inline
 #endif
 
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
-// CH1 => ADC2, CH2 => ADC1
-
-// Pin numbers for the analog frontends
-#define CH1_RANGE_SEL   26
-#define CH1_VOLTAGE     25
-
-#define CH2_RANGE_SEL   21
-// Physical pin
-//#define CH2_VOLTAGE     33
-// ADC channel
-#define CH2_VOLTAGE     ADC_CHANNEL_5
-
-// Number of values stored in ch1 and ch2 sample buffer
-#define SAMPLE_BUFFER_SIZE 10
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
-
-typedef struct
-{
-    int32_t zeroOffset;
-    // Different scaling values for each range
-    // and for positive and negative values
-    float pScaling[LAST_RANGE];
-    float nScaling[LAST_RANGE];
-} afeChannelCal_t;
-
-//////////////////////////////////////
-//////////////////////////////////////
-
-typedef struct
-{
-    struct
-    {
-        uint32_t level;
-        afeTrigMode_t mode;
-        afeTrigType_t type;
-        uint32_t selectedChannel;
-        uint32_t postTrigLen;
-        uint32_t preTrigLen;
-        bool isTriggered;
-        uint32_t triggerIndex;
-        uint32_t holdoff;
-    } trigger;
-
-    const uint32_t sampleRate;
-
-    afeRange_t ch1_range;
-    afeRange_t ch2_range;
-
-    uint32_t currentSampleIndex;
-    uint16_t ch1_sampleBuffer[SAMPLE_BUFFER_SIZE];
-    uint16_t ch2_sampleBuffer[SAMPLE_BUFFER_SIZE];
-
-    // caliration values for ch1 and ch2
-    afeChannelCal_t ch1_cal;
-    afeChannelCal_t ch2_cal;
-
-} afeCore_t;
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
-// static adc_continuous_handle_t s_adc_handle;
-
-// #define SAMPLE_BUFF_SIZE   4096
-
-// uint8_t buf[SAMPLE_BUFF_SIZE] = {0};
-// size_t bytes_read = 0;
-
-//adc_continuous_read( handle, buffer, sizeof(buffer), &bytes_read, portMAX_DELAY );
 
 afeCore_t afeCore =
 {
@@ -165,10 +100,9 @@ LOCAL void readCalibrationData(void)
         if( err == ESP_ERR_NVS_NOT_FOUND )
         {
             // Set default values
-            data->zeroOffset = 0;
-
             for( uint32_t i = 0; i < LAST_RANGE; i++ )
             {
+                data->zeroOffset[i] = 0;
                 data->pScaling[i] = 0.0f;
                 data->nScaling[i] = 0.0f;
             }
@@ -232,19 +166,75 @@ LOCAL void calibrationDataInit(void)
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-// Used to calibrate both analog frontends.
-// Takes control over the screen and returns when the calibration is done.
-void afeCore_calibrate(void)
+///////////////////////////
+// Moved to afeCalib.cpp //
+///////////////////////////
+//
+// // Used to calibrate both analog frontends.
+// void afeCore_calibrationTask( void* pvParameter )
+// {
+//     if( pvParameter == NULL || !mutex_take() ) { vTaskDelete(NULL); }
+
+//     QueueHandle_t q = *(QueueHandle_t*)pvParameter;
+
+//     while( !afeCore.isInitialized )
+//     {
+//         hmiEventData_t e = getinputs( q );
+//         if( e.inputs & (1 << BTN_ESC) )
+//         {
+//             mutex_release();
+//             vTaskDelete(NULL); 
+//         }
+//     }
+
+//     // Clear all events
+//     getinputs( q );
+
+//     tft.fillScreen( TFT_BLACK );
+//     tft.setTextSize( TFT_LARGE );
+//     tft.setTextColor( TFT_WHITE );
+//     tft.drawString( "CALIBRATION", RESOLUTION_X / 2, RESOLUTION_Y / 8 );
+//     tft.setTextSize( TFT_MEDIUM );
+//     tft.drawString( "Short each input,", RESOLUTION_X / 2, RESOLUTION_Y / 6 );
+//     tft.drawString( "after which press enter", RESOLUTION_X / 2, RESOLUTION_Y / 5 );
+
+//     for(;;)
+//     {
+//         hmiEventData_t e = getinputs( q );
+//         if( e.inputs & (1 << BTN_ESC) )
+//         {
+//             mutex_release();
+//             vTaskDelete(NULL); 
+//         }
+//         if( e.inputs & (1 << BTN_ENTER) ) { break; }
+//     }
+
+//     // Average samples over 2 seconds
+//     // TODO: Change this to wait for ~2 seconds 
+//     // and use afeCore_getNewestSamples( n = 2*afeCore.sampleRate );
+//     for( uint32_t i = 0; i < (2 * afeCore.sampleRate); i++ )
+//     {
+//         int32_t sample;
+//         adc_oneshot_read( afeCore_t, ADC_CHANNEL_0, &sample )
+//     }
+
+//     for(;;)
+//     {
+
+//     }
+
+//     mutex_release();
+//     // self-delete
+//     vTaskDelete(NULL); 
+// }
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+// Temporarily used for calibration ( until afeCore is finalized )
+afeCore_t* afeCore_getCore(void)
 {
-    if( mutex_take() )
-    {
-        for(;;)
-        {
-
-        }
-
-        mutex_release();
-    }
+    return &afeCore;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -255,51 +245,70 @@ void afeCore_init(void)
 {
     calibrationDataInit();
 
-    // adc_continuous_handle_cfg_t handle_cfg =
-    // {
-    //     .max_store_buf_size = SAMPLE_BUFF_SIZE,
-    //     .conv_frame_size    = SAMPLE_BUFF_SIZE,
-    // };
-    // ESP_ERROR_CHECK(adc_continuous_new_handle(&handle_cfg, &s_adc_handle));
+    adc_oneshot_chan_cfg_t chan_cfg = 
+    {
+        // 12‑bit resolution 
+        .bitwidth = ADC_BITWIDTH_DEFAULT,   
+        // Full scale input (0-3.3V)
+        .atten = ADC_ATTEN_DB_12,           
+    };
 
-    // adc_digi_pattern_config_t pattern =
-    // {
-    //     // ADC attenuation: 12dB => full range 0-3.3V
-    //     .atten     = ADC_ATTEN_DB_12,
-    //     // Enabled channels
-    //     .channel   = CH2_VOLTAGE,
-    //     // ADC1 only
-    //     .unit      = ADC_UNIT_1,
-    //     // 12-bit mode
-    //     .bit_width = ADC_BITWIDTH_12,
-    // };
+    // ADC1 INIT
+    adc_oneshot_unit_init_cfg_t adc1_cfg = 
+    {
+        .unit_id = ADC_UNIT_1,
+        .clk_src = ADC_DIGI_CLK_SRC_DEFAULT,
+        .ulp_mode = ADC_ULP_MODE_DISABLE,
+    };
 
-    // adc_continuous_config_t dig_cfg =
-    // {
-    //     // 200 ksps
-    //     .sample_freq_hz = 200000,
-    //     // Only one adc is used (ADC1)
-    //     .conv_mode      = ADC_CONV_SINGLE_UNIT_1,
-    //     // 12-bit conversion + 4-bit channel ID
-    //     .format         = ADC_DIGI_OUTPUT_FORMAT_TYPE1,
-    //     // Only one pattern
-    //     .pattern_num    = 1,
-    //     .adc_pattern    = &pattern,
-    // };
-    // ESP_ERROR_CHECK(adc_continuous_config(s_adc_handle, &dig_cfg));
+    adc_oneshot_new_unit( &adc1_cfg, &afeCore.ch2_handle );
+    adc_oneshot_config_channel( afeCore.ch2_handle, ADC_CHANNEL_0, &chan_cfg );
 
-    // // 4) Start
-    // ESP_ERROR_CHECK(adc_continuous_start(s_adc_handle));
+    // ADC2 INIT
+    adc_oneshot_unit_init_cfg_t adc2_cfg = 
+    {
+        .unit_id = ADC_UNIT_2,
+        .clk_src = ADC_DIGI_CLK_SRC_DEFAULT,
+        .ulp_mode = ADC_ULP_MODE_DISABLE,
+    };
+    adc_oneshot_new_unit( &adc2_cfg, &afeCore.ch1_handle );
+    adc_oneshot_config_channel( afeCore.ch1_handle, ADC_CHANNEL_2, &chan_cfg );
+
+    afeCore.isInitialized = true;
 }
 
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////
+//////////////////////////////////////
 
 // Deinitializes afeCore, which includes removing the active task
 // and stops timerX
 void afeCore_deinit(void)
 {
 
+}
+
+//////////////////////////////////////
+//////////////////////////////////////
+
+bool afeCore_isInitialized(void)
+{
+    return afeCore.isInitialized;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+void afeCore_enableChannel1(void)
+{
+    afeCore.isCh1Disabled = false;
+}
+
+//////////////////////////////////////
+//////////////////////////////////////
+
+void afeCore_disableChannel1(void)
+{
+    afeCore.isCh1Disabled = true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -324,7 +333,7 @@ afeErr_t afeCore_setTriggerLevel( double voltage )
 ////////////////////////////////////////////////////////////////////////////////
 
 // Sets the channel that is used to trigger on
-afeErr_t afeCore_setTriggerChannel( uint32_t channel )
+afeErr_t afeCore_setTriggerChannel( afeChannel_t channel )
 {
 
 }
@@ -386,15 +395,28 @@ afeErr_t afeCore_setTriggerLength( uint32_t postTriggerLength_ms,
 ////////////////////////////////////////////////////////////////////////////////
 
 // Sets the input range for the given channel. ( x0.1, x0.3 )
-afeErr_t afeCore_setChannelRange( afeRange_t range, uint32_t channel )
+afeErr_t afeCore_setChannelRange( afeRange_t range, afeChannel_t channel )
 {
+    if( channel >= LAST_CHANNEL ){ return CHANNEL_INVALID; }
+    if( range >= LAST_RANGE ){ return RANGE_INVALID; }
+
+    if( channel == CHANNEL_1 )
+    {
+        afeCore.ch1_range = range;
+        gpio_set_level( (gpio_num_t)CH1_RANGE_SEL, range == RANGE_5V ? 1 : 0 );
+    }
+    else if( channel == CHANNEL_2 )
+    {
+        afeCore.ch2_range = range;
+        gpio_set_level( (gpio_num_t)CH2_RANGE_SEL, range == RANGE_5V ? 1 : 0 );
+    }
 
 }
 
 //////////////////////////////////////
 //////////////////////////////////////
 
-afeRange_t afeCore_getChannelRange( uint32_t channel )
+afeRange_t afeCore_getChannelRange( afeChannel_t channel )
 {
 
 }
@@ -405,7 +427,7 @@ afeRange_t afeCore_getChannelRange( uint32_t channel )
 // Returns the current sample rate in samples per second.
 uint32_t afeCore_getSampleRate(void)
 {
-
+    return afeCore.sampleRate;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

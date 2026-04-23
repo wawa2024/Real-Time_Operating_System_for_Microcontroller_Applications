@@ -10,6 +10,7 @@
 #include "graph_task.h"
 #include "serial_task.h"
 #include "menu_task.h"
+#include "afeCore.h"
 
 /////////////////////////////// 2.Macros ///////////////////////////////
 
@@ -31,6 +32,7 @@ menu_t items[MENU_TASKS] = {
   {info,(char*)"About version", 4096}
   ,{ui_task,(char*)"Oscilloscope", 16384}
   ,{snake_task,(char*)"Snake", 16384}
+  ,{afeCore_calibrationTask, (char*)"AFE Cal", 16384}
 };
 static const size_t items_num = sizeof(items)/sizeof(menu_t);
 
@@ -144,15 +146,18 @@ void menu_task(void){
     } else if ( inputs & BTN_ENTER ) {
 
       menu_t& item = items[index];
-      xTaskCreate(item.task
-                  ,item.title
-                  ,item.stack_size
-                  ,&q
-                  ,1
-                  ,&xHandle
-                  );
+      if( item.task != nullptr )
+      {
+        xTaskCreate(item.task
+                    ,item.title
+                    ,item.stack_size
+                    ,&q
+                    ,1
+                    ,&xHandle
+                    );
 
-      draw(index);
+        draw(index);
+      }
 
     }
 
