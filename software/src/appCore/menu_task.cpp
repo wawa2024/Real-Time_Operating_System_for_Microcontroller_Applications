@@ -18,7 +18,7 @@
 
 #define REFRESH_RATE_MS 170
 #define ITEM_SIZE sizeof(hmiEventData_t)
-#define DEFAULT_INDEX 1
+#define DEFAULT_INDEX 0
 
 /////////////////////////////// 3.Types ////////////////////////////////
 //////////////////////////// 4.Declarations ////////////////////////////
@@ -34,7 +34,7 @@ menu_t items[MENU_TASKS] = {
   {info_task,(char*)"About version", 4096}
   ,{ui_task,(char*)"Oscilloscope", 16384}
   ,{snake_task,(char*)"Snake", 16384}
-  ,{telnet_task,(char*)"Telnet",2048}
+  ,{telnet_task,(char*)"Telnet",16384}
   ,{afeCore_calibrationTask, (char*)"AFE Cal", 16384}
 };
 static const size_t items_num = sizeof(items)/sizeof(menu_t);

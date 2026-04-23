@@ -28,6 +28,8 @@ static const char *TAG = "telnet_task";
 
 static void draw() {
 
+  reset();
+
   tft.print("Telnet: ");
 
   if(telnet_available()){
@@ -52,11 +54,11 @@ void telnet_task(void* pvParameter){
 
   // attempt to take mutex
   while(not mutex_take()) DELAY(100);
+
   draw();
+
   while(flag){
     uint32_t inputs = getinputs(q).inputs;
-
-    reset();
 
     if ( inputs & BTN_ESC ) {
       flag = false;

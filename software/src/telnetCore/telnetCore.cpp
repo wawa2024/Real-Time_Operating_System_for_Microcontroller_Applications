@@ -163,7 +163,18 @@ void wifi_deinit() {
   ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_NULL));
   ESP_ERROR_CHECK(esp_wifi_deinit());
   ESP_ERROR_CHECK(esp_event_loop_delete_default());
-  ESP_ERROR_CHECK(esp_netif_deinit());
+
+  esp_netif_t *ap = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
+  if (ap) {
+    esp_netif_dhcps_stop(ap);
+    esp_netif_destroy(ap);
+  }
+  esp_netif_t *sta = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+  if (sta) {
+    esp_netif_dhcpc_stop(sta);
+    esp_netif_destroy(sta);
+  }
+  esp_netif_deinit();
 }
 
 bool telnet_available() {
