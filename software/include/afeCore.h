@@ -23,9 +23,11 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#include "esp_adc/adc_cali.h"
-#include "esp_adc/adc_cali_scheme.h"
-#include "esp_adc/adc_oneshot.h"
+// #include "esp_adc/adc_cali.h"
+// #include "esp_adc/adc_cali_scheme.h"
+// #include "esp_adc/adc_oneshot.h"
+
+#include <driver/adc.h>
 
 #ifndef AFE_CORE_H
 #define AFE_CORE_H
@@ -40,13 +42,15 @@
 // Physical pin
 //#define CH1_VOLTAGE     25
 // ADC channel
-#define CH1_VOLTAGE     ADC_CHANNEL_8
+//#define CH1_VOLTAGE     ADC_CHANNEL_8
+#define CH1_VOLTAGE     ADC2_CHANNEL_8
 
 #define CH2_RANGE_SEL   21
 // Physical pin
 //#define CH2_VOLTAGE     33
 // ADC channel
-#define CH2_VOLTAGE     ADC_CHANNEL_5
+//#define CH2_VOLTAGE     ADC_CHANNEL_5
+#define CH2_VOLTAGE     ADC1_CHANNEL_5
 
 // Number of values stored in ch1 and ch2 sample buffer
 #define SAMPLE_BUFFER_SIZE 10
@@ -147,11 +151,11 @@ typedef struct
     afeChannelCal_t ch1_cal;
     afeChannelCal_t ch2_cal;
 
-    adc_oneshot_unit_handle_t ch1_handle;
-    adc_oneshot_unit_handle_t ch2_handle;
+    // adc_oneshot_unit_handle_t ch1_handle;
+    // adc_oneshot_unit_handle_t ch2_handle;
 
-    adc_cali_handle_t ch1_calHandle;
-    adc_cali_handle_t ch2_calHandle;
+    // adc_cali_handle_t ch1_calHandle;
+    // adc_cali_handle_t ch2_calHandle;
 
     bool isCh1Disabled;
 

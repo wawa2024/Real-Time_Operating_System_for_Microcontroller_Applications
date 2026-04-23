@@ -28,9 +28,9 @@
 // User input
 #include "hmiCore.h"
 
-#include "esp_adc/adc_cali.h"
-#include "esp_adc/adc_cali_scheme.h"
-#include "esp_adc/adc_oneshot.h"
+// #include "esp_adc/adc_cali.h"
+// #include "esp_adc/adc_cali_scheme.h"
+// #include "esp_adc/adc_oneshot.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -99,14 +99,17 @@ void afeCore_calibrationTask( void* pvParameter )
         int ch1_sample = 0, ch2_sample = 0;
         int ch1_mv = 0, ch2_mv = 0;
 
-        adc_oneshot_read( afeCore->ch1_handle, CH1_VOLTAGE, &ch1_sample );
-        adc_oneshot_read( afeCore->ch2_handle, CH2_VOLTAGE, &ch2_sample );
+        ch1_sample = adc1_get_raw( CH2_VOLTAGE ); 
+        adc2_get_raw( CH1_VOLTAGE, ADC_WIDTH_BIT_12, &ch1_sample ); 
 
-        adc_cali_raw_to_voltage( afeCore->ch1_calHandle, ch1_sample, &ch1_mv );
-        adc_cali_raw_to_voltage( afeCore->ch2_calHandle, ch2_sample, &ch2_mv );
+        // adc_oneshot_read( afeCore->ch1_handle, CH1_VOLTAGE, &ch1_sample );
+        // adc_oneshot_read( afeCore->ch2_handle, CH2_VOLTAGE, &ch2_sample );
 
-        ch1_sum += ch1_mv;
-        ch2_sum += ch2_mv;
+        // adc_cali_raw_to_voltage( afeCore->ch1_calHandle, ch1_sample, &ch1_mv );
+        // adc_cali_raw_to_voltage( afeCore->ch2_calHandle, ch2_sample, &ch2_mv );
+
+        ch1_sum += ch1_sample;
+        ch2_sum += ch2_sample;
     }
 
     ch1_sum /= (2 * afeCore_getSampleRate());
