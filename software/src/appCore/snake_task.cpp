@@ -4,7 +4,7 @@
 /// @file snake_task.cpp
 /// @date 2026-04-19
 /// @author wawa2024
-/// @brief A snake game task implemented for FreeRTOS
+/// @brief A snake game task implemented on FreeRTOS
 ///////////////////////////// 1.Libraries //////////////////////////////
 
 #include <stdint.h>
@@ -76,6 +76,9 @@ static void snake_deinit();
 static QueueHandle_t q = NULL;
 
 //////////////////////////// 5.1.Variables /////////////////////////////
+
+static const char* TAG = "snake_task";
+
 //////////////////////////// 5.2.Functions /////////////////////////////
 
 static bool evalApple(Grid grid, Index& x, Index& y){
@@ -212,11 +215,11 @@ static Game evalSnake(Snake& snake, Grid grid){
 
 static void snake_deinit(){
 
-  #ifdef DEBUG
-  Serial.println("[snake_task]: self-deleting");
-  #endif
-
   mutex_release();
+
+  #ifdef DEBUG
+  ESP_LOGI(TAG,MSG_DELETED);
+  #endif
 
   vTaskDelete(NULL); // self-delete
 
@@ -225,7 +228,7 @@ static void snake_deinit(){
 void snake_task(void* pvParameter){
 
   #ifdef DEBUG
-  Serial.println("[snake_task]: launched");
+  ESP_LOGI(TAG,MSG_LAUNCHED);
   #endif
 
   q = *(QueueHandle_t*)pvParameter;

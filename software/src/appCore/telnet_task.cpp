@@ -5,19 +5,14 @@
 /// @date 2026-04-21
 /// @author wawa2024
 /// @copyright Copyright © 2026, wawa2024. All rights reserved.
-/// @brief A telnet FreeRTOS task for ESP32.
+/// @brief A telnet task for FreeRTOS.
 ///////////////////////////// 1.Libraries //////////////////////////////
 
-#include <Arduino.h>
-#include <shellCore.h>
+#include <esp32-oscilloscope.h>
+#include <telnetCore.h>
+#include <hmiCore.h>
 
-#include "nvs_flash.h"
-#include "esp_wifi.h"
-#include "esp_event.h"
-#include "esp_netif.h"
 #include "esp_log.h"
-
-#include "AsyncTCP.h"
 
 /////////////////////////////// 2.Macros ///////////////////////////////
 /////////////////////////////// 3.Types ////////////////////////////////
@@ -27,143 +22,61 @@
 //////////////////////////// 5.Definitions /////////////////////////////
 //////////////////////////// 5.1.Variables /////////////////////////////
 
-static const char *TAG = "mini_ap";
+static const char *TAG = "telnet_task";
 
 //////////////////////////// 5.2.Functions /////////////////////////////
 
-class TelnetHandler {
-public:
+static void draw() {
 
-  TelnetHandler() {
-    server = new AsyncServer{23};
-    server->onClient(
-                     [this](void* s, AsyncClient* client){
-                       ESP_LOGI(TAG, "Telnet client connected");
-                       client->onData(
-                                      [](void* arg, AsyncClient* c, void* data, size_t len){
-                                        //c->write((const char*)data, len); // echo back
+  tft.print("Telnet: ");
 
-                                        size_t i = 0;
-                                        char buf[256];
+  if(telnet_available()){
 
-                                        for(i = 0 ; i < sizeof(buf)/sizeof(char) ; i++){
-                                          buf[i] = '\0';
-                                        }
+    tft.print("ON");
 
-                                        const char* stream = (const char*)data;
+  } else {
 
-                                        for(i = 0 ; i < len ; i++){
-                                          char c = stream[i];
-                                          switch(c){
-                                          case '\n': case '\r':
-                                            break;
-                                          default:
-                                            buf[i] = c;
-                                            break;
-                                          }
-                                        }
+    tft.print("OFF");
 
-                                        String s = shell(buf);
-
-                                        c->write(s.c_str(),s.length());
-                                      }
-                                      , nullptr
-                                      );
-                       client->onDisconnect(
-                                            [](void* arg, AsyncClient* c){
-                                              ESP_LOGI(TAG, "Telnet client disconnected");
-                                            }
-                                            , nullptr
-                                            );
-                     }
-                     , nullptr
-                     );
-    server->begin();
   }
-
-  ~TelnetHandler() {
-    server->end();
-    delete server;
-  }
-
-private:
-  AsyncServer* server = nullptr;
-
-};
-
-static TelnetHandler* telnet = nullptr;
-
-void telnet_init() {
-  telnet = telnet == nullptr ? new TelnetHandler() : telnet;
 }
 
-void telnet_deinit() {
-  delete telnet;
-  telnet = nullptr;
-}
-
-void wifi_init(){
+void telnet_task(void* pvParameter){
 
 #ifdef DEBUG
-  ESP_LOGI(TAG,"wifi_init");
+  ESP_LOGI(TAG,MSG_LAUNCHED);
 #endif
 
-  const char* AP_SSID = TAG;
-  const char* AP_PASS = "itsasecret";
-  const uint8_t AP_CHANNEL = 1;
-  const uint8_t AP_MAX_CONN = 4;
+  QueueHandle_t q = *(QueueHandle_t*)pvParameter;
+  bool flag = true;
 
-  // NVS (required by Wi‑Fi)
-  if (nvs_flash_init() == ESP_ERR_NVS_NO_FREE_PAGES ||
-      nvs_flash_init() == ESP_ERR_NVS_NEW_VERSION_FOUND)
-    {
-      nvs_flash_erase();
-      nvs_flash_init();
+  // attempt to take mutex
+  while(not mutex_take()) DELAY(100);
+  draw();
+  while(flag){
+    uint32_t inputs = getinputs(q).inputs;
+
+    reset();
+
+    if ( inputs & BTN_ESC ) {
+      flag = false;
     }
 
-  // Initialize
-  ESP_ERROR_CHECK(esp_netif_init());
-  ESP_ERROR_CHECK(esp_event_loop_create_default());
-  esp_netif_t *ap_netif = esp_netif_create_default_wifi_ap();
-  if (ap_netif == NULL) {
-    ESP_LOGE(TAG, "failed to create default wifi AP netif");
-    return;
-  }
-  wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-  ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    if ( inputs & BTN_ENTER ) {
+      telnet_toggle();
+      draw();
+    }
 
-  // Configure Access Point
-  wifi_config_t ap_config = { 0 };
-  strncpy((char *)ap_config.ap.ssid, AP_SSID, sizeof(ap_config.ap.ssid)-1);
-  strncpy((char *)ap_config.ap.password, AP_PASS, sizeof(ap_config.ap.password)-1);
-  ap_config.ap.channel = AP_CHANNEL;
-  ap_config.ap.max_connection = AP_MAX_CONN;
-  ap_config.ap.ssid_hidden = 0;
-  ap_config.ap.ssid_len = 0;
-  ap_config.ap.authmode = (strlen(AP_PASS) >= 8) ? WIFI_AUTH_WPA_WPA2_PSK : WIFI_AUTH_OPEN;
+    DELAY(20);
 
-  // Launch Access Point
-  ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
-  ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
-  ESP_ERROR_CHECK(esp_wifi_start());
-
-  // Log info
-  ESP_LOGI(TAG, "Access point started. SSID=%s PASS=%s", AP_SSID, AP_PASS);
-  esp_netif_ip_info_t ip_info;
-  esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF"); // or "WIFI_AP_DEF"
-  if (netif && esp_netif_get_ip_info(netif, &ip_info) == ESP_OK) {
-    ESP_LOGI(TAG, "IP=" IPSTR, IP2STR(&ip_info.ip));
   }
 
-}
+  mutex_release();
 
-void wifi_deinit(){
 #ifdef DEBUG
-  ESP_LOGI(TAG,"wifi_deinit");
+  ESP_LOGI(TAG,MSG_DELETED);
 #endif
-  ESP_ERROR_CHECK(esp_wifi_stop());
-  ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_NULL));
-  ESP_ERROR_CHECK(esp_wifi_deinit());
-  ESP_ERROR_CHECK(esp_event_loop_delete_default());
-  ESP_ERROR_CHECK(esp_netif_deinit());
+
+  vTaskDelete(NULL); // self-delete
+
 }

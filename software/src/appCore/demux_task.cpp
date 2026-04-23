@@ -40,6 +40,8 @@ static SemaphoreHandle_t demux_mutex = xSemaphoreCreateMutex();
 
 static demuxData_t buf[DEMUX_COUNT];
 
+static const char* TAG = "demux_task";
+
 //////////////////////////// 5.2.Functions /////////////////////////////
 
 static bool pushBuf(demuxData_t data, size_t i){
@@ -149,13 +151,13 @@ demuxResponse_t demux_request(const demuxRequest_t request){
 
 static void demux_init(){
 #ifdef DEBUG
-  Serial.println("[mutex_task]: launched");
+  ESP_LOGI(TAG,MSG_LAUNCHED);
 #endif
 }
 
 static void demux_deinit(){
 #ifdef DEBUG
-  Serial.println("[mutex_task]: self-deleting");
+  ESP_LOGI(TAG,MSG_DELETED);
 #endif
 }
 
@@ -171,13 +173,13 @@ void demux_task(void* pvParameter){
 
 
 #ifdef DEBUG
-      Serial.println("[mutex_task]: message recieved");
+      ESP_LOGI(TAG,"message recieved");
 #endif
 
       demuxResponse_t response = demux(request);
 
 #ifdef DEBUG
-      Serial.println("[mutex_task]: sending message");
+      ESP_LOGI(TAG,"sending message");
 #endif
 
       xQueueSend(demux_tx_q,&response,0);

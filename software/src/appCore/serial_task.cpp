@@ -71,13 +71,13 @@ static String getline(){
 
 static void serial_init(){
 #ifdef DEBUG
-  ESP_LOGI(TAG,"serial init");
+  ESP_LOGI(TAG,MSG_LAUNCHED);
 #endif
 }
 
 static void serial_deinit(){
 #ifdef DEBUG
-  ESP_LOGI(TAG,"self-deleting");
+  ESP_LOGI(TAG,MSG_DELETED);
 #endif
   vTaskDelete(NULL); // self-delete
 }
@@ -93,7 +93,7 @@ void serial_task(void* pvParameter) {
 
   while (true) {
     String line = getline();
-    printf(shell(line.c_str()).c_str());
+    Serial.print(shell(line.c_str()).c_str());
     DELAY(REFRESH_RATE_MS);
   }
 

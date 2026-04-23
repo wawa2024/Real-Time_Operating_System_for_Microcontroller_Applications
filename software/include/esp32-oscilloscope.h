@@ -72,6 +72,11 @@
 //////////////////////////// 4.Declarations ////////////////////////////
 //////////////////////////// 4.1.Variables /////////////////////////////
 
+#ifdef DEBUG
+#define MSG_LAUNCHED "launched"
+#define MSG_DELETED "deleted"
+#endif
+
 #ifdef __cplusplus
 extern TFT_eSPI tft;
 extern TFT_eSprite spr;
