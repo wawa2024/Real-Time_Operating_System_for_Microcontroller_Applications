@@ -83,14 +83,11 @@ void setup() {
   tft.drawCentreString("SETUP BOOTED",RESOLUTION_X/2,RESOLUTION_Y/2,1);
   // ^drawCentreString(string,x,y,font_px_size)
 
-  wifi_init();
-  telnet_init();
-
-  //afeCore_init();
+  afeCore_init();
   DELAY(2000);
 }
 
 void loop(){
-  //menu_task();
+  menu_task();
   DELAY(10);
 }
