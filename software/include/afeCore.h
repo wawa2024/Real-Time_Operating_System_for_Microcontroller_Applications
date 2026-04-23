@@ -62,6 +62,8 @@ typedef enum
     TRIGGER_LEVEL_BOUNDS,
     // Given trigger length out of bounds
     TRIGGER_LENGTH_BOUNDS,
+    // Given trigger type is not valid
+    TRIGGER_TYPE_INVALID,
     // Given channel is not valid
     CHANNEL_INVALID,
     // Given range is not valid
@@ -76,6 +78,7 @@ typedef enum
     RISING_EDGE_TRIGGER,
     FALLING_EDGE_TRIGGER,
     BOTH_EDGE_TRIGGER,
+    LAST_TRIGGER_TYPE
 } afeTrigType_t;
 
 typedef enum
@@ -84,6 +87,7 @@ typedef enum
     SINGLE_TRIGGER,
     REPEAT_TRIGGER,
     AUTO_TRIGGER,
+    LAST_TRIGGER_MODE
 } afeTrigMode_t;
 
 typedef enum
@@ -145,6 +149,9 @@ typedef struct
 
     adc_oneshot_unit_handle_t ch1_handle;
     adc_oneshot_unit_handle_t ch2_handle;
+
+    adc_cali_handle_t ch1_calHandle;
+    adc_cali_handle_t ch2_calHandle;
 
     bool isCh1Disabled;
 

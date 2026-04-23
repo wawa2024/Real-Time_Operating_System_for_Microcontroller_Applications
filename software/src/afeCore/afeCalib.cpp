@@ -97,12 +97,16 @@ void afeCore_calibrationTask( void* pvParameter )
     for( uint32_t i = 0; i < (2 * afeCore_getSampleRate()); i++ )
     {
         int ch1_sample = 0, ch2_sample = 0;
-        
+        int ch1_mv = 0, ch2_mv = 0;
+
         adc_oneshot_read( afeCore->ch1_handle, CH1_VOLTAGE, &ch1_sample );
         adc_oneshot_read( afeCore->ch2_handle, CH2_VOLTAGE, &ch2_sample );
 
-        ch1_sum += ch1_sample;
-        ch2_sum += ch2_sample;
+        adc_cali_raw_to_voltage( afeCore->ch1_calHandle, ch1_sample, &ch1_mv );
+        adc_cali_raw_to_voltage( afeCore->ch2_calHandle, ch2_sample, &ch2_mv );
+
+        ch1_sum += ch1_mv;
+        ch2_sum += ch2_mv;
     }
 
     ch1_sum /= (2 * afeCore_getSampleRate());

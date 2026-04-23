@@ -77,6 +77,8 @@ afeCore_t afeCore =
     .ch2_cal = {0},
     .ch1_handle = 0,
     .ch2_handle = 0,
+    .ch1_calHandle = 0,
+    .ch2_calHandle = 0,
     .isCh1Disabled = false,
     .isInitialized = false,
 };
@@ -268,6 +270,9 @@ void afeCore_init(void)
 {
     calibrationDataInit();
 
+    afeCore_setChannelRange( RANGE_15V, CHANNEL_1 );
+    afeCore_setChannelRange( RANGE_15V, CHANNEL_2 );
+
     adc_oneshot_chan_cfg_t chan_cfg = 
     {
         // 12‑bit resolution 
@@ -296,6 +301,22 @@ void afeCore_init(void)
     };
     adc_oneshot_new_unit( &adc2_cfg, &afeCore.ch1_handle );
     adc_oneshot_config_channel( afeCore.ch1_handle, ADC_CHANNEL_2, &chan_cfg );
+
+    // Calibration 
+    adc_cali_line_fitting_config_t ch1_calCfg = 
+    {
+        .unit_id = ADC_UNIT_1,
+        .atten = ADC_ATTEN_DB_12,
+        .bitwidth = ADC_BITWIDTH_DEFAULT,
+    };
+    adc_cali_line_fitting_config_t ch2_calCfg = 
+    {
+        .unit_id = ADC_UNIT_2,
+        .atten = ADC_ATTEN_DB_12,
+        .bitwidth = ADC_BITWIDTH_DEFAULT,
+    };
+    adc_cali_create_scheme_line_fitting( &ch1_calCfg, &afeCore.ch1_calHandle );
+    adc_cali_create_scheme_line_fitting( &ch2_calCfg, &afeCore.ch2_calHandle );
 
     afeCore.isInitialized = true;
 }
@@ -384,7 +405,8 @@ afeTrigMode_t afeCore_getTriggerMode(void)
 // Sets the trigger type used. ( e.g. edge type (rising, falling...), etc... )
 afeErr_t afeCore_setTriggerType( afeTrigType_t type )
 {
-
+    if( type >= LAST_TRIGGER_TYPE ) {  }
+    afeCore.trigger.type = type;
 }
 
 //////////////////////////////////////
@@ -392,7 +414,7 @@ afeErr_t afeCore_setTriggerType( afeTrigType_t type )
 
 afeTrigType_t afeCore_getTriggerType(void)
 {
-
+    return afeCore.trigger.type;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -441,7 +463,7 @@ afeErr_t afeCore_setChannelRange( afeRange_t range, afeChannel_t channel )
 
 afeRange_t afeCore_getChannelRange( afeChannel_t channel )
 {
-
+    return channel == CHANNEL_1 ? afeCore.ch1_range : afeCore.ch2_range;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
