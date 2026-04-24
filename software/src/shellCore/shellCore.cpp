@@ -12,6 +12,7 @@
 
 #include <esp32-oscilloscope.h>
 #include <time_task.h>
+#include <telnetCore.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -42,7 +43,8 @@ static String kill(const String&);
 static String reboot(const String&);
 static String resume(const String&);
 static String suspend(const String&);
-static String date(const String&);
+static String time(const String&);
+static String telnet(const String&);
 
 //////////////////////////// 5.Definitions /////////////////////////////
 //////////////////////////// 5.1.Variables /////////////////////////////
@@ -58,7 +60,8 @@ static builtin table[] =
   , { "reboot", reboot }
   , { "resume", resume }
   , { "suspend", suspend }
-  , { "date", date }
+  , { "time", time}
+  , { "telnet", telnet}
 };
 
 //////////////////////////// 5.2.Functions /////////////////////////////
@@ -73,7 +76,11 @@ static String unknown(const String& word){
   return s + "? '" + word + "'\r\n";
 }
 
-static String date(const String& args){
+static String telnet(const String& args){
+  return telnet_toggle() ? "Telnet online\r\n" : "Telnet offline\r\n";
+}
+
+static String time(const String& args){
 
   timeMethod_t method = args.equals("stop") ? TIME_STOP :
                         args.equals("start") ? TIME_START :
