@@ -31,8 +31,8 @@ SemaphoreHandle_t serial_mutex = xSemaphoreCreateMutex();
 //////////////////////////// 5.2.Functions /////////////////////////////
 
 bool mutex_delete(){
-  vSemaphoreDelete(screen_mutex);
-  vSemaphoreDelete(inputs_mutex);
+  vSemaphoreDelete(screen_mutex); screen_mutex = NULL;
+  vSemaphoreDelete(inputs_mutex); inputs_mutex = NULL;
   return true;
 }
 
@@ -76,9 +76,9 @@ void setup() {
 
   Serial.begin(115200);
 
-  xTaskCreate(time_task,"time_task",4096,NULL,1,NULL);
+  xTaskCreate(time_task,"time_task",2048,NULL,1,NULL);
 
-  xTaskCreate(serial_task,"serial_task",4096,NULL,1,NULL);
+  xTaskCreate(serial_task,"serial_task",8192,NULL,1,NULL);
 
   tft.init();
   tft.setRotation(3);

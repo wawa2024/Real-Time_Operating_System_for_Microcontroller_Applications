@@ -84,7 +84,7 @@ static void info_task(void* pvParameter){
 static void draw(uint16_t index) {
 
   // attempt to take mutex
-  if (xSemaphoreTake(screen_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+  if ( screen_mutex && xSemaphoreTake(screen_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
 
     reset();
 
@@ -135,7 +135,7 @@ void menu_task(void){
     hmiEventData_t data = {};
     uint32_t& inputs = data.inputs;
 
-    if (xSemaphoreTake(inputs_mutex,pdMS_TO_TICKS(100)) == pdTRUE) {
+    if ( inputs_mutex && xSemaphoreTake(inputs_mutex,pdMS_TO_TICKS(100)) == pdTRUE) {
       data = getinputs(q);
       xSemaphoreGive(inputs_mutex);
     }

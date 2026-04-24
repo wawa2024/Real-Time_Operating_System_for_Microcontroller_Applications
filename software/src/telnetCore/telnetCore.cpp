@@ -41,29 +41,41 @@ public:
                        client->onData(
                                       [](void* arg, AsyncClient* c, void* data, size_t len){
 
-                                        size_t i = 0;
-                                        char buf[256];
-
-                                        for(i = 0 ; i < sizeof(buf)/sizeof(char) ; i++){
-                                          buf[i] = '\0';
-                                        }
-
+                                        static String s = "";
+                                        static bool ready = false;
                                         const char* stream = (const char*)data;
+                                        String echo = "";
 
-                                        for(i = 0 ; i < len ; i++){
+                                        for(size_t i = 0 ; i < len ; i++){
+
                                           char c = stream[i];
-                                          switch(c){
-                                          case '\n': case '\r':
-                                            break;
-                                          default:
-                                            buf[i] = c;
-                                            break;
+
+                                          if( c == '\r' ){
+                                            echo += c;
+                                          } else if( c == '\n' ){
+                                            echo += c;
+                                            ready = true;
+                                          } else if ( c == '\b' ) {
+                                            if (!s.isEmpty()) s.remove(s.length() - 1);
+                                            echo += c;
+                                            echo += ' ';
+                                            echo += c;
+                                          } else if ( ' ' <= c && c <= '~' ) {
+                                            echo += c;
+                                            s += c;
                                           }
+
                                         }
 
-                                        String s = shell(buf);
+                                        c->write(echo.c_str(),echo.length());
 
-                                        c->write(s.c_str(),s.length());
+                                        if(ready){
+                                          String msg = shell(s.c_str());
+                                          c->write(msg.c_str(),msg.length());
+                                          s = "";
+                                          ready = false;
+                                        }
+
                                       }
                                       , nullptr
                                       );
@@ -84,7 +96,6 @@ public:
   }
 private:
   AsyncServer* server = nullptr;
-
 };
 
 static TelnetHandler* telnet = nullptr;
@@ -152,7 +163,7 @@ void wifi_init() {
 
   if (netif) {
     if (esp_netif_get_ip_info(netif, &ip_info) == ESP_OK) {
-      ESP_LOGI(TAG, "IP=" IPSTR, IP2STR(&ip_info.ip));
+      ESP_LOGI(TAG,IPSTR,IP2STR(&ip_info.ip));
     }
     esp_netif_dhcps_start(netif);
   }
