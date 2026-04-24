@@ -279,10 +279,10 @@ void afeCore_calibrationTask( void* pvParameter )
     tft.setTextColor( TFT_WHITE );
     tft.setTextDatum( MC_DATUM );
     tft.drawString( "CALIBRATION", xMidPoint, 1*yOffset );
-    tft.setTextSize( TFT_MEDIUM );
+    tft.setTextSize( TFT_SMALL );
     tft.drawString( "By pressing enter you start the calibration,", xMidPoint, 2*yOffset );
     tft.drawString( "and the previous calibration will be lost.", xMidPoint, 3*yOffset );
-    tft.drawString( "Press enter to continue ==>>", xMidPoint, 3*yOffset );
+    tft.drawString( "Press enter to continue ==>>", xMidPoint, 4*yOffset );
 
     handleInputs(q);
 
