@@ -22,6 +22,12 @@
         - Added the ability to store calibration data in non volatile memory
         - Expanded afeCore_t and created a new typedef for calibration values
 
+    24.04.2026 JR
+        - Changed the buffer types for getNewestSamples and getTriggerBuffer
+          from uint16_t to int32_t 
+        - Implemented afeCore_convertSampleToVoltage
+        - Added couple helper functions for calibration purposes
+
 */
 
 #include <afeCore.h>
@@ -38,7 +44,6 @@
 #ifndef LOCAL
     #define LOCAL   static inline
 #endif
-
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -197,80 +202,6 @@ LOCAL void calibrationDataInit(void)
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-///////////////////////////
-// Moved to afeCalib.cpp //
-///////////////////////////
-//
-// // Used to calibrate both analog frontends.
-// void afeCore_calibrationTask( void* pvParameter )
-// {
-//     if( pvParameter == NULL || !mutex_take() ) { vTaskDelete(NULL); }
-
-//     QueueHandle_t q = *(QueueHandle_t*)pvParameter;
-
-//     while( !afeCore.isInitialized )
-//     {
-//         hmiEventData_t e = getinputs( q );
-//         if( e.inputs & (1 << BTN_ESC) )
-//         {
-//             mutex_release();
-//             vTaskDelete(NULL); 
-//         }
-//     }
-
-//     // Clear all events
-//     getinputs( q );
-
-//     tft.fillScreen( TFT_BLACK );
-//     tft.setTextSize( TFT_LARGE );
-//     tft.setTextColor( TFT_WHITE );
-//     tft.drawString( "CALIBRATION", RESOLUTION_X / 2, RESOLUTION_Y / 8 );
-//     tft.setTextSize( TFT_MEDIUM );
-//     tft.drawString( "Short each input,", RESOLUTION_X / 2, RESOLUTION_Y / 6 );
-//     tft.drawString( "after which press enter", RESOLUTION_X / 2, RESOLUTION_Y / 5 );
-
-//     for(;;)
-//     {
-//         hmiEventData_t e = getinputs( q );
-//         if( e.inputs & (1 << BTN_ESC) )
-//         {
-//             mutex_release();
-//             vTaskDelete(NULL); 
-//         }
-//         if( e.inputs & (1 << BTN_ENTER) ) { break; }
-//     }
-
-//     // Average samples over 2 seconds
-//     // TODO: Change this to wait for ~2 seconds 
-//     // and use afeCore_getNewestSamples( n = 2*afeCore.sampleRate );
-//     for( uint32_t i = 0; i < (2 * afeCore.sampleRate); i++ )
-//     {
-//         int32_t sample;
-//         adc_oneshot_read( afeCore_t, ADC_CHANNEL_0, &sample )
-//     }
-
-//     for(;;)
-//     {
-
-//     }
-
-//     mutex_release();
-//     // self-delete
-//     vTaskDelete(NULL); 
-// }
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
-// Temporarily used for calibration ( until afeCore is finalized )
-afeCore_t* afeCore_getCore(void)
-{
-    return &afeCore;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
 // Sets the calibration zero offset for the specified channel
 // on the range that is currently enabled
 afeErr_t afeCore_setZeroOffset( int32_t offset, afeChannel_t channel )
@@ -387,10 +318,6 @@ void afeCore_init(void)
     afeCore_setChannelRange( RANGE_15V, CHANNEL_1 );
     afeCore_setChannelRange( RANGE_15V, CHANNEL_2 );
 
-    // adc2_config_channel_atten(ADC2_CHANNEL_8, ADC_ATTEN_DB_12);
-    // adc1_config_width(ADC_WIDTH_BIT_12);
-    // adc1_config_channel_atten(ADC1_CHANNEL_5, ADC_ATTEN_DB_12);
-
     adc_oneshot_chan_cfg_t chan_cfg = 
     {
         // 12‑bit resolution 
@@ -419,22 +346,6 @@ void afeCore_init(void)
     };
     adc_oneshot_new_unit( &adc2_cfg, &afeCore.ch1_handle );
     adc_oneshot_config_channel( afeCore.ch1_handle, CH1_VOLTAGE, &chan_cfg );
-
-    // // Calibration 
-    // adc_cali_line_fitting_config_t ch1_calCfg = 
-    // {
-    //     .unit_id = ADC_UNIT_1,
-    //     .atten = ADC_ATTEN_DB_12,
-    //     .bitwidth = ADC_BITWIDTH_DEFAULT,
-    // };
-    // adc_cali_line_fitting_config_t ch2_calCfg = 
-    // {
-    //     .unit_id = ADC_UNIT_2,
-    //     .atten = ADC_ATTEN_DB_12,
-    //     .bitwidth = ADC_BITWIDTH_DEFAULT,
-    // };
-    // adc_cali_create_scheme_line_fitting( &ch1_calCfg, &afeCore.ch1_calHandle );
-    // adc_cali_create_scheme_line_fitting( &ch2_calCfg, &afeCore.ch2_calHandle );
 
     afeCore.isInitialized = true;
 }
@@ -480,7 +391,6 @@ bool afeCore_isChannel1Disabled(void)
 {
     return afeCore.isCh1Disabled;
 }
-
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -541,7 +451,7 @@ afeTrigMode_t afeCore_getTriggerMode(void)
 // Sets the trigger type used. ( e.g. edge type (rising, falling...), etc... )
 afeErr_t afeCore_setTriggerType( afeTrigType_t type )
 {
-    if( type >= LAST_TRIGGER_TYPE ) {  }
+    if( type >= LAST_TRIGGER_TYPE ) { return TRIGGER_TYPE_INVALID; }
     afeCore.trigger.type = type;
 }
 
@@ -591,7 +501,6 @@ afeErr_t afeCore_setChannelRange( afeRange_t range, afeChannel_t channel )
         afeCore.ch2_range = range;
         gpio_set_level( (gpio_num_t)CH2_RANGE_SEL, range == RANGE_15V ? 0 : 1 );
     }
-
 }
 
 //////////////////////////////////////
@@ -617,7 +526,7 @@ uint32_t afeCore_getSampleRate(void)
 // Takes the buffers where samples are copied to and the number of wanted
 // samples. Both buffers should be the same size and their length should
 // not exceed the given n. Returns the number of samples actually copied
-uint32_t afeCore_getNewestSamples( uint16_t *ch1_buffer, uint16_t *ch2_buffer,
+uint32_t afeCore_getNewestSamples( int32_t *ch1_buffer, int32_t *ch2_buffer,
                                    uint32_t n )
 {
 
@@ -632,7 +541,7 @@ uint32_t afeCore_getNewestSamples( uint16_t *ch1_buffer, uint16_t *ch2_buffer,
 // Takes the buffers where samples are copied to and the size of the buffers.
 // Both buffers should be the same size and their length should not exceed
 // the given n. Returns the number of samples actually copied.
-uint32_t afeCore_getTriggerBuffer( uint16_t *ch1_buffer, uint16_t *ch2_buffer,
+uint32_t afeCore_getTriggerBuffer( int32_t *ch1_buffer, int32_t *ch2_buffer,
                                    uint32_t n )
 {
 
