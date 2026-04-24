@@ -9,6 +9,8 @@
 #include "appCore/serial_task.h"
 #include "appCore/menu_task.h"
 
+#include <time_task.h>
+
 #include <afeCore.h>
 #include <telnetCore.h>
 
@@ -73,6 +75,8 @@ void reset() {
 void setup() {
 
   Serial.begin(115200);
+
+  xTaskCreate(time_task,"time_task",4096,NULL,1,NULL);
 
   xTaskCreate(serial_task,"serial_task",4096,NULL,1,NULL);
 

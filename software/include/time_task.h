@@ -1,13 +1,43 @@
 ////////////////////////////////////////////////////////////////////////
-/// @file graph_task.h
-/// Voltage grapher header
+// @file time_task.h
+// @brief Time task header file
 ///////////////////////////// 1.Libraries //////////////////////////////
-/////////////////////////////// 2.Macros ///////////////////////////////
+#ifndef TIME_TASK_H
+#define TIME_TASK_H
 /////////////////////////////// 3.Types ////////////////////////////////
+
+extern uint8_t conv2d(const char* p);
+
+typedef struct {
+  int8_t hh=conv2d(__TIME__)
+    , mm=conv2d(__TIME__+3)
+    , ss=conv2d(__TIME__+6)
+    ; // Get H, M, S from compile time
+} Time ;
+
+typedef enum {
+  TIME_READ,
+  TIME_STOP,
+  TIME_START,
+  TIME_UNKNOWN
+} timeMethod_t;
+
+typedef struct {
+  timeMethod_t method = TIME_UNKNOWN;
+} timeRequest_t ;
+
+typedef struct {
+  Time time;
+} timeResponse_t ;
+
 //////////////////////////// 4.Declarations ////////////////////////////
 //////////////////////////// 4.1.Variables /////////////////////////////
 //////////////////////////// 4.2.Functions /////////////////////////////
-extern void oscilloscope_task(void* pvParameter);
+
+extern timeResponse_t time_request(timeRequest_t request);
+extern void time_task(void* pvParameter);
+
 //////////////////////////// 5.Definitions /////////////////////////////
 //////////////////////////// 5.1.Variables /////////////////////////////
 //////////////////////////// 5.2.Functions /////////////////////////////
+#endif

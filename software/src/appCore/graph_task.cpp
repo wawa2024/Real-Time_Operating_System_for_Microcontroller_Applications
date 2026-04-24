@@ -51,8 +51,13 @@ typedef struct {
   int32_t y_offset;
 } ViewState;
 
+enum class Channel {
+  CH1,
+  CH2
+};
+
 typedef struct {
-  bool ch_selected = 0;
+  Channel ch_selected = Channel::CH1;
   bool ch1_active = 1;
   bool ch2_active = 1;
 } ChannelState;
@@ -120,8 +125,8 @@ State state = State::TRIGGER;
 
 //////////////////////////// 5.2.Functions /////////////////////////////
 
-void add_sample(uint16_t v, RingBuffer *rb) {
-	rb->samples[rb->write_head] = v;
+void add_sample(uint16_t val, RingBuffer *rb) {
+	rb->samples[rb->write_head] = val;
 	rb->write_head = (rb->write_head + 1) % BUF_LEN;
 }
 
@@ -145,7 +150,7 @@ void adc_task(void *pvParameters) {
 
 static void oscilloscope_deinit(){
   #ifdef DEBUG
-  Serial.println("[ui_task]: self-deleting");
+  Serial.println("[oscilloscope_task]: self-deleting");
   #endif
 
   mutex_release();
@@ -166,6 +171,10 @@ float get_voltage(int y, ViewState view) {
 
   float voltage = MAX_VOLTS*((val-ZERO_VOLTS)/ZERO_VOLTS);
   return voltage;
+}
+
+void autoset(ViewState view) {
+  
 }
 
 void trigger(RingBuffer *rb, uint16_t trigger_level) {
@@ -204,12 +213,12 @@ void draw_graph(RingBuffer *rb, ViewState view, int32_t color) {
   int prev_x = 0;
   int prev_y = 0;
 
-  for (int x = 0; x < RESOLUTION_X; x++) {
+  for (int i = 0; i < RESOLUTION_X; i++) {
 
     int32_t sample_index =
       head_snapshot
       - view.x_offset
-      - (int32_t)(x * view.x_zoom);
+      - (int32_t)(i * view.x_zoom);
 
     while (sample_index < 0)
       sample_index += BUF_LEN;
@@ -225,18 +234,18 @@ void draw_graph(RingBuffer *rb, ViewState view, int32_t color) {
     if (y < 0) y = 0;
     if (y >= RESOLUTION_Y) y = RESOLUTION_Y - 1;
 
-    if (x > 0) {
-      tft.drawLine(RESOLUTION_X - prev_x, prev_y, RESOLUTION_X - x, y, color);
+    if (i > 0) {
+      tft.drawLine(RESOLUTION_X - prev_x, prev_y, RESOLUTION_X - i, y, color);
     }
 
-    prev_x = x;
+    prev_x = i;
     prev_y = y;
   }
 }
 
 void update_grid() {
   ViewState view;
-  if (!ch_states.ch_selected) {
+  if (ch_states.ch_selected == Channel::CH1) {
     view = ch1_view;
   } else {
     view = ch2_view;
@@ -290,21 +299,21 @@ void button_logic(uint16_t *trigger_level, ViewState *view) {
       state = State::CURSOR;
     }
   } else if ( inputs & BTN_CH1 ) {
-    if (ch_states.ch_selected) {
+    if (ch_states.ch_selected == Channel::CH2) {
       ch_states.ch1_active = true;
-      ch_states.ch_selected = false;
+      ch_states.ch_selected = Channel::CH1;
     } else {
       ch_states.ch1_active = false;
-      ch_states.ch_selected = true;
+      ch_states.ch_selected = Channel::CH2;
     }
     update_grid();
   } else if ( inputs & BTN_CH2 ) {
-    if (!ch_states.ch_selected) {
+    if (ch_states.ch_selected == Channel::CH1) {
       ch_states.ch2_active = true;
-      ch_states.ch_selected = true;
+      ch_states.ch_selected = Channel::CH2;
     } else {
       ch_states.ch2_active = false;
-      ch_states.ch_selected = false;
+      ch_states.ch_selected = Channel::CH1;
     }
     update_grid();
   }
@@ -382,7 +391,7 @@ void button_logic(uint16_t *trigger_level, ViewState *view) {
   Serial.println((int)state);
 }
 
-void ui_task(void *pvParameters) {
+void oscilloscope_task(void *pvParameters) {
   
   q = *(QueueHandle_t*)pvParameters;
  
@@ -395,15 +404,15 @@ void ui_task(void *pvParameters) {
 
 	xTaskCreate( adc_task, "ADC", 4096, NULL, 1, &adc );
 
-  while(true) {
-    if (!ch_states.ch_selected) {
-      button_logic(&triggers.ch1_level, &ch1_view);
-      draw_grid(ch1_view);
-    } else {
-      button_logic(&triggers.ch2_level, &ch2_view);
-      draw_grid(ch2_view);
-    }
-    tft.fillScreen(TFT_BLACK);
+    while(true) {
+      if (ch_states.ch_selected == Channel::CH1) {
+        button_logic(&triggers.ch1_level, &ch1_view);
+        draw_grid(ch1_view);
+      } else {
+        button_logic(&triggers.ch2_level, &ch2_view);
+        draw_grid(ch2_view);
+      }
+      tft.fillScreen(TFT_BLACK);
 //        spr.fillSprite(TFT_BLACK);
     if (ch_states.ch1_active) {
       trigger(&rb_ch1, triggers.ch1_level);
@@ -417,7 +426,18 @@ void ui_task(void *pvParameters) {
     }
     draw_cursor(TFT_SKYBLUE);
 //        spr.pushSprite(RESOLUTION_X, RESOLUTION_Y);
-    vTaskDelay(pdMS_TO_TICKS(100));
-  }
+        vTaskDelay(pdMS_TO_TICKS(100));
+      }
 
 }
+
+/*
+Todo:
+Autoset
+Run/stop
+Measure
+Cursors
+Trigger settings
+Math
+Time values for x-axis
+*/

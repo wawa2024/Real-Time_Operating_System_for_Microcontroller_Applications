@@ -11,6 +11,7 @@
 #include <stdlib.h>
 
 #include <esp32-oscilloscope.h>
+#include <time_task.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -41,6 +42,7 @@ static String kill(const String&);
 static String reboot(const String&);
 static String resume(const String&);
 static String suspend(const String&);
+static String date(const String&);
 
 //////////////////////////// 5.Definitions /////////////////////////////
 //////////////////////////// 5.1.Variables /////////////////////////////
@@ -56,6 +58,7 @@ static builtin table[] =
   , { "reboot", reboot }
   , { "resume", resume }
   , { "suspend", suspend }
+  , { "date", date }
 };
 
 //////////////////////////// 5.2.Functions /////////////////////////////
@@ -68,6 +71,36 @@ static String ok(const String& word){
 static String unknown(const String& word){
   String s = "";
   return s + "? '" + word + "'\r\n";
+}
+
+static String date(const String& args){
+
+  timeMethod_t method = args.equals("stop") ? TIME_STOP :
+                        args.equals("start") ? TIME_START :
+                        args.length() == 0 ? TIME_READ :
+                        TIME_UNKNOWN;
+
+  if(method == TIME_UNKNOWN) return unknown(args);
+
+  timeRequest_t request = { .method = method };
+  timeResponse_t response = time_request(request);
+
+  char buf[16];
+  for(size_t i = 0 ; i < sizeof(buf) ; i++) buf[i] = 0;
+
+  snprintf( buf
+            , sizeof(buf)
+            ,"%02d:%02d:%02d\r\n"
+            , response.time.hh
+            , response.time.mm
+            , response.time.ss
+            );
+
+  String s = buf;
+
+  if( method != TIME_READ ) s = ok(args) + s;
+
+  return s;
 }
 
 static const char* task_state_name(eTaskState state){
