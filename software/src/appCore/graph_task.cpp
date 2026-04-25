@@ -75,6 +75,11 @@ typedef struct {
   char y[GRID_COUNT_Y-1][STR_LEN];
 } GridValues;
 
+typedef struct {
+  char ch1[4];
+  char ch2[4];
+} UiText;
+
 //////////////////////////// 4.Declarations ////////////////////////////
 //////////////////////////// 4.1.Variables /////////////////////////////
 //////////////////////////// 4.2.Functions /////////////////////////////
@@ -133,6 +138,10 @@ void add_sample(uint16_t val, RingBuffer *rb) {
 }
 
 void adc_task(void *pvParameters) {
+  TickType_t xLastWakeTime;
+  const TickType_t xPeriod = pdMS_TO_TICKS(1);
+  xLastWakeTime = xTaskGetTickCount();
+
 	while (true) {
     RingBuffer *ch1_ptr = ch_states.stop ? &copy_rb_ch1 : &rb_ch1;
     RingBuffer *ch2_ptr = ch_states.stop ? &copy_rb_ch2 : &rb_ch2;
@@ -148,7 +157,7 @@ void adc_task(void *pvParameters) {
       add_sample((uint16_t)ch2_reading, ch2_ptr);
     }
 
-		vTaskDelay(pdMS_TO_TICKS(1));
+		vTaskDelayUntil(&xLastWakeTime, xPeriod);
   }
 }
 
@@ -163,17 +172,19 @@ static void oscilloscope_deinit(){
   vTaskDelete(NULL); // self-delete
 }
 
-float get_voltage(int y, ViewState view) {
-  if (view.y_zoom == 0.0f)
+float get_voltage(uint16_t y, afeChannel_t ch) {
+  ViewState *view_ptr = (ch == CHANNEL_1) ? &ch1_view : &ch2_view;
+  if (view_ptr->y_zoom == 0.0f)
     return 0;
 
   float adjusted = (float)(RESOLUTION_Y / 2 - y);
-  float val = (adjusted / view.y_zoom) + view.y_offset;
+  float val = (adjusted / view_ptr->y_zoom) + view_ptr->y_offset;
 
   if (val < 0.0f) val = 0.0f;
   if (val > 65535.0f) val = 65535.0f;
 
-  float voltage = MAX_VOLTS * ((val - ZERO_VOLTS) / ZERO_VOLTS);
+  uint16_t adc_val = 4095 - (int16_t)val;
+  float voltage = afeCore_sample2VoltageCal(adc_val, ch);
   return voltage;
 }
 
@@ -339,18 +350,12 @@ void draw_graph(RingBuffer *rb, ViewState view, int32_t color) {
 }
 
 void update_grid() {
-  ViewState view;
-  if (ch_states.ch_selected == CHANNEL_1) {
-    view = ch1_view;
-  } else {
-    view = ch2_view;
-  }
 	for (uint16_t i = GRID_OFFSET_X; i < RESOLUTION_X; i += GRID_OFFSET_X) {
 		
 	}
 	for (uint16_t i = 0; i < GRID_COUNT_Y-1; i++) {
     uint16_t y = (i+1) * GRID_OFFSET_Y;
-    float val = get_voltage(y, view);
+    float val = get_voltage(y, ch_states.ch_selected);
     int int_part = (int)val;
     int frac_part = abs((int)((val - int_part) * 100));
     snprintf(grid_values.y[i], STR_LEN, "%d.%02d", int_part, frac_part);
@@ -536,11 +541,10 @@ void oscilloscope_task(void *pvParameters) {
 
 /*
 Todo:
-Run/stop
 Measure
 Cursors
 Trigger settings
 Math
-Voltage scaling y zoom fix
 Time values for x-axis
+Text cueues for UI actions
 */
