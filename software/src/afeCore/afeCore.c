@@ -118,7 +118,9 @@ LOCAL void readCalibrationData(void)
     esp_err_t err;
 
     // Get namespace handle
-    nvs_open( nvs_calNamespace, NVS_READONLY, &handle );
+    err = nvs_open(nvs_calNamespace, NVS_READONLY, &handle);
+    
+    if( err != ESP_OK ) { return; }
 
     for( uint32_t i = 0; i < 2; i++ )
     {
@@ -130,7 +132,7 @@ LOCAL void readCalibrationData(void)
         const char * key = i == 0 ? ch1_storageKey : ch2_storageKey;
 
         // Read data
-        err = nvs_get_blob( handle, key, &data, &size );
+        err = nvs_get_blob( handle, key, data, &size );
 
         // No value stored yet
         if( err == ESP_ERR_NVS_NOT_FOUND )
