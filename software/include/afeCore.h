@@ -240,6 +240,9 @@ extern uint32_t afeCore_getTriggerBuffer( int32_t *ch1_buffer,
 // Returns the voltage as double ( does not apply calibration nor inversion )
 extern double afeCore_convertSampleToVoltage( int32_t sample, afeRange_t range );
 
+// Takes in a sample and converts it to voltage. 
+// Returns the voltage as float ( Applies calibration to the sample )
+extern float afeCore_sample2VoltageCal( int32_t sample, afeChannel_t channel );
 
 //////////////////////////////////////////////////////////////////
 // Functions below this should only be used inside afeCalib.cpp //

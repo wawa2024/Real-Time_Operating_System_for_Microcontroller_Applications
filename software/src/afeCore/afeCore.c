@@ -62,9 +62,9 @@ afeCore_t afeCore =
         .triggerIndex = 0,
         .holdoff = 0,
     },
-    .sampleRate = 1000,
-    .ch1_range = RANGE_5V,
-    .ch2_range = RANGE_5V, 
+    .sampleRate = SAMPLE_RATE,
+    .ch1_range = RANGE_15V,
+    .ch2_range = RANGE_15V, 
     .currentSampleIndex = 0,
     .ch1_sampleBuffer = {0},
     .ch2_sampleBuffer = {0},
@@ -618,3 +618,31 @@ double afeCore_convertSampleToVoltage( int32_t sample, afeRange_t range )
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
+
+float afeCore_sample2VoltageCal( int32_t sample, afeChannel_t channel )
+{
+    double voltage = 0.0;
+
+    switch( channel )
+    {
+        case CHANNEL_1:
+            sample += afeCore.ch1_cal.zeroOffset[ afeCore.ch1_range ];
+            sample *= -1;
+            sample *= sample < 0 ? afeCore.ch1_cal.nScaling[ afeCore.ch1_range ] : afeCore.ch1_cal.pScaling[ afeCore.ch1_range ];
+            voltage = afeCore_convertSampleToVoltage( sample, afeCore.ch1_range );
+            break;
+        
+        case CHANNEL_2:
+            sample += afeCore.ch2_cal.zeroOffset[ afeCore.ch2_range ];
+            sample *= -1;
+            sample *= sample < 0 ? afeCore.ch2_cal.nScaling[ afeCore.ch2_range ] : afeCore.ch2_cal.pScaling[ afeCore.ch2_range ];
+            voltage = afeCore_convertSampleToVoltage( sample, afeCore.ch2_range );
+            break;
+    }
+
+    return voltage;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
