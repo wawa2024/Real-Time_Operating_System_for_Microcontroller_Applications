@@ -62,6 +62,7 @@ typedef struct {
   afeTrigMode_t mode;
   afeTrigType_t type;
   afeChannel_t selected_channel;
+  bool is_triggered;
 } Trigger;
 
 typedef struct {
@@ -117,7 +118,8 @@ Trigger trigger = {
   .level = 2335,
   .mode = NO_TRIGGER,
   .type = RISING_EDGE_TRIGGER,
-  .selected_channel = CHANNEL_1
+  .selected_channel = CHANNEL_1,
+  .is_triggered = false
 };
 
 Cursor cursor_1 = {
@@ -191,6 +193,7 @@ float get_voltage(uint16_t y, afeChannel_t ch) {
 void apply_autoset(RingBuffer *rb, ViewState *view) {
   uint16_t min_val = rb->samples[0];
   uint16_t max_val = rb->samples[0];
+  uint16_t val_delta = max_val - min_val;
 
   for (size_t i = 1; i < BUF_LEN; ++i) {
     if (rb->samples[i] < min_val) {
@@ -200,9 +203,12 @@ void apply_autoset(RingBuffer *rb, ViewState *view) {
       max_val = rb->samples[i];
     }
   }
-
-  view->y_offset = min_val + (max_val - min_val) / 2;
-  view->y_zoom = RESOLUTION_Y / (max_val - min_val) * 1.1;
+  view->y_offset = min_val + (val_delta) / 2;
+  if (val_delta == 0) {
+    view->y_zoom = RESOLUTION_Y * 1.1;
+  } else {
+    view->y_zoom = RESOLUTION_Y / (val_delta) * 1.1;
+  }
 
   uint32_t sum = 0;
   for (int i = 0; i < BUF_LEN; i++) {
@@ -267,43 +273,75 @@ void toggle_run_stop() {
 }
 
 void set_read_heads() {
+  trigger.is_triggered = false;
   rb_ch1.read_head = (rb_ch1.write_head - RESOLUTION_X + BUF_LEN) % BUF_LEN;
   rb_ch2.read_head = (rb_ch2.write_head - RESOLUTION_X + BUF_LEN) % BUF_LEN;
 }
 
 void trigger_logic() {
   if (trigger.mode == NO_TRIGGER) {
+    trigger.is_triggered = false;
     set_read_heads();
     return;
   }
 
   RingBuffer* rb = (trigger.selected_channel == CHANNEL_1) ? &rb_ch1 : &rb_ch2;
+  ViewState *view_ptr = (trigger.selected_channel == CHANNEL_1) ? &ch1_view : &ch2_view;
+  bool trigger_activated = false;
+  int start_value = RESOLUTION_X / 2 * view_ptr->x_zoom;
 
-	for (int i = RESOLUTION_X / 2; i < BUF_LEN; ++i) {
-		size_t index = (rb->write_head - 1 - i + BUF_LEN) % BUF_LEN;
+	for (int i = start_value; i < BUF_LEN + start_value; ++i) {
+		size_t index = (rb->write_head - i + 2 * BUF_LEN) % BUF_LEN;
 		uint16_t value1 = rb->samples[index];
 		uint16_t value2 = rb->samples[(index + 1) % BUF_LEN];
-    uint16_t read_head_index = (index - RESOLUTION_X / 2 + BUF_LEN) % BUF_LEN;
+    uint16_t read_head_index = (index + start_value) % BUF_LEN;
 		if (trigger.level >= value1 && trigger.level < value2) {
+      trigger.is_triggered = true;
+      trigger_activated = true;
 			rb_ch1.read_head = read_head_index;
       rb_ch2.read_head = read_head_index;
 			return;
 		} else if (trigger.level <= value1 && trigger.level > value2) {
+      trigger.is_triggered = true;
+      trigger_activated = true;
 			rb_ch1.read_head = read_head_index;
       rb_ch2.read_head = read_head_index;
 			return;
 		}
-    set_read_heads();
 	}
+  if (!trigger_activated) {
+    trigger.is_triggered = false;
+    set_read_heads();
+  }
 }
 
-void draw_trigger(ViewState view, uint32_t color) {
+void draw_trigger(afeChannel_t ch, uint32_t color) {
+  ViewState *view_ptr = (ch == CHANNEL_1) ? &ch1_view : &ch2_view;
+//  RingBuffer *rb_ptr = (ch == CHANNEL_1) ? &rb_ch1 : &rb_ch2;
+
   if (trigger.mode == NO_TRIGGER) return;
 
-  float adjusted = (trigger.level - view.y_offset) * view.y_zoom;
+  float adjusted = (trigger.level - view_ptr->y_offset) * view_ptr->y_zoom;
 
   int y = RESOLUTION_Y / 2 - (int)adjusted;
 	tft.drawFastHLine(0, y, RESOLUTION_X, color);
+/*
+  if (trigger.is_triggered) {
+    int32_t sample_index =
+    head_snapshot
+    - view.x_offset
+    - (int32_t)(i * view.x_zoom);
+    uint16_t val = rb_ptr->samples[rb_ptr->read_head];
+
+    float adjusted = (val - view_ptr->y_offset) * view_ptr->y_zoom + 0.5f;
+
+    int y = RESOLUTION_Y / 2 - (int)adjusted;
+
+    if (y < 0) y = 0;
+    if (y >= RESOLUTION_Y) y = RESOLUTION_Y - 1;
+    tftFastVLine()
+  }
+    */
 }
 
 void draw_cursor(uint32_t color) {
@@ -348,7 +386,11 @@ void draw_graph(RingBuffer *rb, ViewState view, int32_t color) {
     prev_y = y;
   }
 }
-
+/*
+    if (i == 0 && trigger.is_triggered) {
+      tft.drawFastVLine(view.x_offset * view.x_zoom, 0, RESOLUTION_Y, color);
+    }
+*/
 void update_grid() {
 	for (uint16_t i = GRID_OFFSET_X; i < RESOLUTION_X; i += GRID_OFFSET_X) {
 		
@@ -523,13 +565,13 @@ void oscilloscope_task(void *pvParameters) {
       if (ch_states.ch1_active) {
         draw_graph(&rb_ch1, ch1_view, TFT_GREEN);
         if (trigger.selected_channel == CHANNEL_1) {
-          draw_trigger(ch1_view, TFT_CYAN);
+          draw_trigger(CHANNEL_1, TFT_CYAN);
         }
       }
       if (ch_states.ch2_active) {
         draw_graph(&rb_ch2, ch2_view, TFT_YELLOW);
         if (trigger.selected_channel == CHANNEL_2) {
-          draw_trigger(ch2_view, TFT_MAGENTA);
+          draw_trigger(CHANNEL_2, TFT_MAGENTA);
         }
       }
       draw_cursor(TFT_SKYBLUE);
