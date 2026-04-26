@@ -430,8 +430,6 @@ LOCAL void hmiHandler( void * pvParameters )
 
                 if( hmiCore.callback != NULL ) { hmiCore.callback(event); }
 
-                if( event.event == E_PRESSED && event.inputs & BTN_SCALE ) printStr("Repeat");
-
                 BaseType_t ret = xQueueSendToBack( hmiCore.xEventQueue,
                                                    (void*)&event, 0 );
 

@@ -155,61 +155,6 @@ static bool IRAM_ATTR adc_convDoneCallback( adc_continuous_handle_t handle,
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-// static inline uint16_t IRAM_ATTR channel2_readRaw(void)
-// {
-//     // uint16_t result = 0;
-
-//     // // If previous conversion finished, read it
-//     // if( SENS.sar_meas_start1.meas1_done_sar ) 
-//     // {
-//     //     result = SENS.sar_meas_start1.meas1_data_sar;
-//     //     // Start next conversion (always)
-//     //     SENS.sar_meas_start1.meas1_start_sar = 1;
-//     // }
-
-//     // return result;
-
-//     uint16_t result = 0;
-
-//     if (SENS.sar_start_force.sar1_done) 
-//     {
-//         result = SENS.sar_start_force.sar1_data;
-//         SENS.sar_start_force.sar1_start_force = 1;
-//     }
-
-//     return result;
-// }
-
-// //////////////////////////////////////
-// //////////////////////////////////////
-
-// static inline uint16_t IRAM_ATTR channel1_readRaw(void)
-// {
-//     // uint16_t result = 0;
-
-//     // // If previous conversion finished, read it
-//     // if( SENS.sar_meas_start2.meas2_done_sar ) 
-//     // {
-//     //     result = SENS.sar_meas_start2.meas2_data_sar;
-//     //     // Start next conversion (always)
-//     //     SENS.sar_meas_start2.meas2_start_sar = 1;
-//     // }
-
-//     // return result;
-//     uint16_t result = 0;
-
-//     if (SENS.sar_start_force.sar2_done) 
-//     {
-//         result = SENS.sar_start_force.sar2_data;
-//         SENS.sar_start_force.sar2_start_force = 1;
-//     }
-
-//     return result;
-// }
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
 extern TaskHandle_t adc;
 
 // Interrupt service routine used to sample the adcs
@@ -526,7 +471,7 @@ LOCAL void adc_init_oneshot(void)
         .atten = ADC_ATTEN_DB_12,           
     };
 
-    // ADC1 INIT
+    // ADC1 INIT ( ADC1 is configured in adc_init_continuous)
     // adc_oneshot_unit_init_cfg_t adc1_cfg = 
     // {
     //     .unit_id = ADC_UNIT_1,
@@ -553,58 +498,28 @@ LOCAL void adc_init_oneshot(void)
 
 LOCAL void adc_init_continuous(void)
 {
-    // adc_continuous_handle_t handle;
-
-    // adc_continuous_config_t cfg = 
-    // {
-    //     .max_store_buf_size = 1024,
-    //     .conv_frame_size = 256,
-    //     .format = ADC_DIGI_OUTPUT_FORMAT_TYPE2,
-    //     // Use ADC1 + ADC2
-    //     .conv_mode = ADC_CONV_BOTH_UNIT,   
-    //     .sample_freq_hz = 20000,
-    //     .pattern_num = 2,
-    //     .adc_pattern = {
-    //     {
-    //         .unit = ADC_UNIT_1,
-    //         .channel = CH2_VOLTAGE,
-    //         .atten = ADC_ATTEN_DB_12,
-    //         .bit_width = SOC_ADC_DIGI_MAX_BITWIDTH,
-    //     },
-    //     {
-    //         .unit = ADC_UNIT_2,
-    //         .channel = CH1_VOLTAGE,
-    //         .atten = ADC_ATTEN_DB_12,
-    //         .bit_width = SOC_ADC_DIGI_MAX_BITWIDTH,
-    //     }
-    // }
-    // };
-
-    // adc_continuous_evt_cbs_t cbs = { .on_conv_done = adc_convDoneCallback };
-
-    // adc_continuous_new_handle( &cfg, &handle );
-    // adc_continuous_register_event_callbacks( handle, &cbs, NULL );
-    // adc_continuous_start( handle );
-
     adc_continuous_handle_t handle;
 
-    adc_continuous_handle_cfg_t handle_cfg = {
+    adc_continuous_handle_cfg_t handle_cfg = 
+    {
         .max_store_buf_size = 1024,
         .conv_frame_size = g_frame_size,
     };
 
-    ESP_ERROR_CHECK(adc_continuous_new_handle(&handle_cfg, &handle));
+    adc_continuous_new_handle( &handle_cfg, &handle );
 
-    adc_digi_pattern_config_t pattern[] = {
+    adc_digi_pattern_config_t pattern[] = 
+    {
         {
             .atten = ADC_ATTEN_DB_12,
-            .channel = CH2_VOLTAGE,   // ADC1 CH5 (GPIO33)
+            .channel = CH2_VOLTAGE,
             .unit = ADC_UNIT_1,
             .bit_width = SOC_ADC_DIGI_MAX_BITWIDTH,
         },
     };
 
-    adc_continuous_config_t dig_cfg = {
+    adc_continuous_config_t dig_cfg = 
+    {
         .pattern_num = 1,
         .sample_freq_hz = SAMPLE_RATE,
         .adc_pattern = pattern,
@@ -612,16 +527,13 @@ LOCAL void adc_init_continuous(void)
         .format = ADC_DIGI_OUTPUT_FORMAT_TYPE2,
     };
 
-    ESP_ERROR_CHECK(adc_continuous_config(handle, &dig_cfg));
+    adc_continuous_config(handle, &dig_cfg);
 
-    adc_continuous_evt_cbs_t cbs = {
-        .on_conv_done = adc_convDoneCallback,
-    };
+    adc_continuous_evt_cbs_t cbs = { .on_conv_done = adc_convDoneCallback };
 
-    ESP_ERROR_CHECK(adc_continuous_register_event_callbacks(handle, &cbs, NULL));
+    adc_continuous_register_event_callbacks( handle, &cbs, NULL );
 
-    ESP_ERROR_CHECK(adc_continuous_start(handle));
-
+    adc_continuous_start( handle );
 }
 
 ////////////////////////////////////////////////////////////////////////////////
