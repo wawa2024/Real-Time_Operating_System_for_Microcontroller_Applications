@@ -270,7 +270,7 @@ void add_sample( uint16_t val, afeChannel_t ch )
 
   RingBuffer *rb = ch == CHANNEL_1 ? ch1_ptr : ch2_ptr;
 
-	rb->samples[rb->write_head] = ADC_RESOLUTION - 1 - val;//rollingAverage( val, ch );
+	rb->samples[rb->write_head] = ADC_RESOLUTION - 1 - rollingAverage( val, ch );
 	rb->write_head = (rb->write_head + 1) % rb->buffer_size;
 }
 
