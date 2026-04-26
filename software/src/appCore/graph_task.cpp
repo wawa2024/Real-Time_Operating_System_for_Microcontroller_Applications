@@ -30,6 +30,7 @@
 #define CH2_BUF_SIZE (CH1_BUF_SIZE * CH2_MULTIPLIER)
 #define CH1_SAMPLE_RATE 20000
 #define CH2_SAMPLE_RATE 20000
+#define HALF_RES_X (RESOLUTION_X / 2)
 
 /////////////////////////////// 3.Types ////////////////////////////////
 
@@ -39,7 +40,8 @@ enum class State {
   SCALE,
   POSITION,
   MEASURE,
-  CURSOR,
+  CURSOR_1,
+  CURSOR_2,
   AUTOSET,
   RUN,
   STOP,
@@ -51,6 +53,7 @@ typedef struct {
   int32_t x_offset;
   uint16_t required_sample_rate;
   uint32_t time_per_div_us;
+  float time_per_pixel_us;
 } Timebase;
 
 typedef struct {
@@ -87,7 +90,11 @@ typedef struct {
 typedef struct {
   uint16_t x;
   uint16_t y;
-  boolean en;
+  boolean en = false;
+  float voltage = 0.0f;
+  int32_t time_us = 0;
+  int32_t color;
+  uint16_t offset_y;
 } Cursor;
 
 typedef struct {
@@ -111,7 +118,8 @@ constexpr const char* state_names[] = {
   "scale",
   "position",
   "measure",
-  "cursor",
+  "cursor 1",
+  "cursor 2",
   "autoset",
   "run",
   "stop",
@@ -130,7 +138,8 @@ Timebase timebase = {
   .x_zoom = 2.0,
   .x_offset = 0,
   .required_sample_rate = RESOLUTION_X / 2,
-  .time_per_div_us = GRID_OFFSET_X * 2 * 1000
+  .time_per_div_us = GRID_OFFSET_X * 2 * 1000,
+  .time_per_pixel_us = 2000.0
 };
 
 ViewState ch1_view = {
@@ -194,7 +203,17 @@ Trigger trigger = {
 Cursor cursor_1 = {
   .x = RESOLUTION_X / 2,
   .y = RESOLUTION_Y / 2,
-  .en = false
+  .en = false,
+  .color = TFT_SKYBLUE,
+  .offset_y = 20
+};
+
+Cursor cursor_2 = {
+  .x = RESOLUTION_X / 2,
+  .y = RESOLUTION_Y / 2,
+  .en = false,
+  .color = TFT_RED,
+  .offset_y = 34
 };
 
 GridValues grid_values{};
@@ -327,6 +346,10 @@ static void oscilloscope_deinit(){
   vTaskDelete(NULL); // self-delete
 }
 
+int32_t get_time_us(uint16_t x) {
+  return (int32_t)((float)(x - HALF_RES_X) * timebase.time_per_pixel_us);
+}
+
 float get_voltage(uint16_t y, afeChannel_t ch) {
   ViewState *view_ptr = (ch == CHANNEL_1) ? &ch1_view : &ch2_view;
   if (view_ptr->y_zoom == 0.0f)
@@ -421,7 +444,8 @@ void set_x_zoom(float zoom) {
   if (timebase.x_zoom > 20)  timebase.x_zoom = 20;
 
   timebase.required_sample_rate = (uint16_t)(RESOLUTION_X / timebase.x_zoom + 0.5f);
-  timebase.time_per_div_us = (uint32_t)(GRID_OFFSET_X * timebase.x_zoom * 1000 + 0.5f);
+  timebase.time_per_div_us = (uint32_t)((float)GRID_OFFSET_X * timebase.x_zoom * 100.0f + 0.5f);
+  timebase.time_per_pixel_us = timebase.x_zoom * 100.0f;
 }
 
 void apply_autoset(RingBuffer *rb, ViewState *view) {
@@ -557,7 +581,6 @@ void trigger_logic() {
     } else {
       ch1_read_head_index = (uint16_t)((index + start_value) / ch2_view.x_multiplier + 0.5f) % rb_ch1.buffer_size;
       ch2_read_head_index = (index + start_value) % rb_ch2.buffer_size;
-
     }
 		if (trigger.level >= value1 && trigger.level < value2) {
       trigger.is_triggered = true;
@@ -595,15 +618,36 @@ void draw_trigger(afeChannel_t ch, uint32_t color) {
   }
 }
 
-void draw_cursor(uint32_t color) {
-  if (cursor_1.en) {
-    tft.drawFastHLine(0, RESOLUTION_Y - cursor_1.y, RESOLUTION_X, color);
-    tft.drawFastVLine(cursor_1.x, 0, RESOLUTION_Y, color);
-    float val = get_voltage(RESOLUTION_Y - cursor_1.y, CHANNEL_1);
+void moveCursor(Cursor& cursor, int inputs) {
+  if (inputs & BTN_UP) {
+    cursor.y += 5;
+  }
+  if (inputs & BTN_DOWN) {
+    cursor.y -= 5;
+  }
+  if (inputs & BTN_RIGHT) {
+    cursor.x += 5;
+  }
+  if (inputs & BTN_LEFT) {
+    cursor.x -= 5;
+  }
+}
+
+void draw_cursor(Cursor *cursor) {
+  if (cursor->en) {
+    tft.drawFastHLine(0, RESOLUTION_Y - cursor->y, RESOLUTION_X, cursor->color);
+    tft.drawFastVLine(cursor->x, 0, RESOLUTION_Y, cursor->color);
+    cursor->voltage = get_voltage(RESOLUTION_Y - cursor->y, ch_states.ch_selected);
+    cursor->time_us = get_time_us(cursor->x);
     char voltage[STR_LEN];
-    float_to_string(val, voltage, STR_LEN);
+    char time[STR_LEN];
+    float_to_string(cursor->voltage, voltage, STR_LEN);
+    us_to_string(cursor->time_us, time, STR_LEN);
     tft.setTextSize(TFT_SMALL);
-    tft.drawString(voltage, 230, 20);
+    tft.setTextColor(cursor->color);
+    tft.drawString(voltage, 230, cursor->offset_y);
+    tft.drawString(time, 270, cursor->offset_y);
+    tft.setTextColor(TFT_WHITE);
   }
 }
 
@@ -697,11 +741,36 @@ void draw_ui_text() {
   tft.setTextColor(TFT_WHITE);
 }
 
+void process_esc() {
+  switch (state) {
+    case State::CURSOR_1:
+      cursor_1.en = false;
+      if (cursor_2.en) {
+        state = State::CURSOR_2;
+        break;
+      }
+      state = State::POSITION;
+      break;
+    case State::CURSOR_2:
+      cursor_2.en = false;
+      if (cursor_1.en) {
+        state = State::CURSOR_1;
+        break;
+      }
+      state = State::POSITION;
+      break;
+
+    default:
+      oscilloscope_deinit();
+      break;
+  }
+}
+
 void button_logic(ViewState *view) {
   hmiEventData_t data = getinputs(q);
   uint32_t& inputs = data.inputs;
 
-  if ( inputs & BTN_ESC ) oscilloscope_deinit();
+  if ( inputs & BTN_ESC ) process_esc();
 
   if ( inputs & BTN_SCALE ) {
     if (state == State::SCALE) {
@@ -720,12 +789,12 @@ void button_logic(ViewState *view) {
   } else if ( inputs & BTN_STOP ) {
     toggle_run_stop();
   } else if ( inputs & BTN_CURSORS ) {
-    if (state == State::CURSOR) {
-      cursor_1.en = !cursor_1.en;
-      state = State::POSITION;
+    if (state == State::CURSOR_1) {
+      cursor_2.en = true;
+      state = State::CURSOR_2;
     } else {
       cursor_1.en = true;
-      state = State::CURSOR;
+      state = State::CURSOR_1;
     }
   } else if ( inputs & BTN_CH1 ) {
     if (ch_states.ch_selected == CHANNEL_2) {
@@ -795,16 +864,11 @@ void button_logic(ViewState *view) {
       }
       break;
 
-    case State::CURSOR:
-      if (inputs & BTN_UP) {
-        cursor_1.y += 5;
-      } else if (inputs & BTN_DOWN) {
-        cursor_1.y -= 5;
-      } else if (inputs & BTN_RIGHT) {
-        cursor_1.x += 5;
-      } else if (inputs & BTN_LEFT) {
-        cursor_1.x -= 5;
-      }
+    case State::CURSOR_1:
+      moveCursor(cursor_1, inputs);
+      break;
+    case State::CURSOR_2:
+      moveCursor(cursor_2, inputs);
       break;
 
     default:
@@ -852,7 +916,8 @@ void oscilloscope_task(void *pvParameters) {
           draw_trigger(CHANNEL_2, TFT_MAGENTA);
         }
       }
-      draw_cursor(TFT_SKYBLUE);
+      draw_cursor(&cursor_1);
+      draw_cursor(&cursor_2);
       vTaskDelay(pdMS_TO_TICKS(REFRESH_RATE_MS));
     }
 
