@@ -10,11 +10,13 @@
 #include "afeCore.h"
 #include <cstring>
 #include <stdio.h>
+#include <stdint.h>
+#include <inttypes.h>
 
 /////////////////////////////// 2.Macros ///////////////////////////////
 
-#define GRID_COUNT_X 20
-#define GRID_COUNT_Y 15
+#define GRID_COUNT_X 8
+#define GRID_COUNT_Y 10
 #define GRID_OFFSET_X (RESOLUTION_X / GRID_COUNT_X) // 16
 #define GRID_OFFSET_Y (RESOLUTION_Y / GRID_COUNT_Y) // 16
 #define REFRESH_RATE_MS 100
@@ -341,9 +343,65 @@ float get_voltage(uint16_t y, afeChannel_t ch) {
   return voltage;
 }
 
+void us_to_string(int32_t us, char *out, size_t out_len) {
+  char sign = ' ';
+  uint32_t abs_us;
+
+  if (us < 0) {
+    sign = '-';
+    abs_us = (uint32_t)(-us);
+  } else {
+    abs_us = (uint32_t)us;
+  }
+
+  const char *unit;
+  uint32_t whole, frac;
+  uint32_t factor;
+
+  if (abs_us >= 1000000UL) {
+    unit = "s";
+    factor = 1000000UL;
+  } else if (abs_us >= 1000UL) {
+    unit = "m";
+    factor = 1000UL;
+  } else {
+    unit = "u";
+    factor = 1UL;
+  }
+
+  whole = abs_us / factor;
+  uint32_t rem = abs_us % factor;
+
+  char buf[24];
+
+  if (whole >= 100) {
+    // xxx
+    snprintf(buf, sizeof(buf), "%lu%s", (unsigned long)whole, unit);
+  }
+  else if (whole >= 10) {
+    // xx.x
+    frac = (rem * 10) / factor;
+    snprintf(buf, sizeof(buf), "%lu.%lu%s", (unsigned long)whole, (unsigned long)frac, unit);
+  }
+  else {
+    // x.xx
+    frac = (rem * 100) / factor;
+    snprintf(buf, sizeof(buf), "%lu.%02lu%s", (unsigned long)whole, (unsigned long)frac, unit);
+  }
+
+  snprintf(out, out_len, "%c%s", sign, buf);
+}
+
 void float_to_string(float val, char *out, size_t out_len) {
-  int sign = (val < 0.0f) ? -1 : 1;
-  float abs_val = val * sign;
+  char sign = ' ';
+  float abs_val;
+
+  if (val < 0.0f) {
+      sign = '-';
+      abs_val = (float)(-val);
+  } else {
+      abs_val = (float)val;
+  }
 
   int int_part = (int)abs_val;
   int frac_part = (int)((abs_val - int_part) * 100.0f + 0.5f);
@@ -353,11 +411,7 @@ void float_to_string(float val, char *out, size_t out_len) {
     int_part += 1;
   }
 
-  if (sign < 0) {
-    snprintf(out, out_len, "-%d.%02dV", int_part, frac_part);
-  } else {
-    snprintf(out, out_len, "%d.%02dV", int_part, frac_part);
-  }
+  snprintf(out, out_len, "%c%d.%02dV", sign, int_part, frac_part);
 }
 
 void set_x_zoom(float zoom) {
@@ -428,7 +482,7 @@ void apply_autoset(RingBuffer *rb, ViewState *view) {
     return;
   }
 
-  float desired_cycles = 2.0f;
+  float desired_cycles = 1.5f;
   float samples_per_screen = avg_period * desired_cycles;
 
   Serial.println(samples_per_screen);
@@ -590,10 +644,11 @@ void draw_graph(RingBuffer *rb, ViewState view, int32_t color) {
 }
 
 void update_grid() {
-	for (uint16_t i = GRID_OFFSET_X; i < RESOLUTION_X; i += GRID_OFFSET_X) {
-		
+	for (uint16_t i = 0; i < GRID_COUNT_X - 1; i++) {
+    int32_t microseconds = timebase.time_per_div_us * (int32_t)((i+1) - (uint16_t)((float)(GRID_COUNT_X) * 0.5f + 0.5f));
+    us_to_string(microseconds, grid_values.x[i], STR_LEN);
 	}
-	for (uint16_t i = 0; i < GRID_COUNT_Y-1; i++) {
+	for (uint16_t i = 0; i < GRID_COUNT_Y - 1; i++) {
     uint16_t y = (i+1) * GRID_OFFSET_Y;
     float val = get_voltage(y, ch_states.ch_selected);
     float_to_string(val, grid_values.y[i], STR_LEN);
@@ -601,14 +656,17 @@ void update_grid() {
 }
 
 void draw_grid(ViewState view) {
-	for (uint16_t i = GRID_OFFSET_X; i < RESOLUTION_X; i += GRID_OFFSET_X) {
-		tft.drawFastVLine(i, 0, RESOLUTION_Y, TFT_DARKGREY);
+	for (uint16_t i = 0; i < GRID_COUNT_X-1; i++) {
+    uint16_t x = (i+1)*GRID_OFFSET_X;
+		tft.drawFastVLine(x, 0, RESOLUTION_Y, TFT_DARKGREY);
+    tft.setTextSize(TFT_SMALL);
+    tft.drawString(grid_values.x[i], x-16, RESOLUTION_Y - 12);
 	}
 	for (uint16_t i = 0; i < GRID_COUNT_Y-1; i++) {
     uint16_t y = (i+1)*GRID_OFFSET_Y;
 		tft.drawFastHLine(0, y, RESOLUTION_X, TFT_DARKGREY);
     tft.setTextSize(TFT_SMALL);
-    tft.drawString(grid_values.y[i], 14, y-3);
+    tft.drawString(grid_values.y[i], 4, y-3);
 	}
 }
 
