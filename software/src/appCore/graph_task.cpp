@@ -8,6 +8,8 @@
 #include <esp32-oscilloscope.h>
 #include <hmiCore.h>
 #include "afeCore.h"
+#include <cstring>
+#include <stdio.h>
 
 /////////////////////////////// 2.Macros ///////////////////////////////
 
@@ -21,7 +23,7 @@
 #define ZERO_VOLTS 2048.0
 #define MAX_VOLTS 16.0
 #define TIMESTEP_MS 1
-#define STR_LEN 16
+#define STR_LEN 20
 
 /////////////////////////////// 3.Types ////////////////////////////////
 
@@ -47,6 +49,7 @@ typedef struct {
 typedef struct {
   float y_zoom;
   int32_t y_offset;
+  uint8_t x_multiplier;
 } ViewState;
 
 typedef struct {
@@ -59,6 +62,8 @@ typedef struct {
   afeChannel_t ch_selected = CHANNEL_1;
   bool ch1_active = true;
   bool ch2_active = true;
+  int32_t ch1_color = TFT_YELLOW;
+  int32_t ch2_color = TFT_GREEN;
 } ChannelState;
 
 typedef struct {
@@ -83,11 +88,26 @@ typedef struct {
 typedef struct {
   char ch1[4];
   char ch2[4];
+  char current_state[13];
 } UiText;
 
 //////////////////////////// 4.Declarations ////////////////////////////
 //////////////////////////// 4.1.Variables /////////////////////////////
 //////////////////////////// 4.2.Functions /////////////////////////////
+
+constexpr const char* state_names[] = {
+  "trigger",
+  "trigsettings",
+  "scale",
+  "position",
+  "measure",
+  "cursor",
+  "autoset",
+  "run",
+  "stop",
+  "math"
+};
+
 //////////////////////////// 5.Definitions /////////////////////////////
 
 static QueueHandle_t q = NULL;
@@ -111,12 +131,14 @@ Timebase timebase = {
 
 ViewState ch1_view = {
   .y_zoom = 1.0,
-  .y_offset = 2385
+  .y_offset = 2385,
+  .x_multiplier = 1
 };
 
 ViewState ch2_view = {
   .y_zoom = 1.0,
-  .y_offset = 2385
+  .y_offset = 2385,
+  .x_multiplier = 20
 };
 
 Trigger trigger = {
@@ -135,7 +157,13 @@ Cursor cursor_1 = {
 
 GridValues grid_values{};
 
-State state = State::TRIGGER;
+State state = State::POSITION;
+
+UiText ui_text = {
+  .ch1 = "CH1",
+  .ch2 = "CH2",
+  .current_state = "position"
+};
 
 //////////////////////////// 5.2.Functions /////////////////////////////
 
@@ -155,9 +183,9 @@ void adc_task(void *pvParameters) {
   const TickType_t xPeriod = pdMS_TO_TICKS(1);
   xLastWakeTime = xTaskGetTickCount();
 
-  static const uint32_t TEMP_BUFF_SIZE = 2000;
-  static uint16_t ch1_tempBuffer[TEMP_BUFF_SIZE] = {};
-  static uint16_t ch2_tempBuffer[TEMP_BUFF_SIZE] = {};
+//  static const uint32_t TEMP_BUFF_SIZE = 2000;
+//  static uint16_t ch1_tempBuffer[TEMP_BUFF_SIZE] = {};
+//  static uint16_t ch2_tempBuffer[TEMP_BUFF_SIZE] = {};
 
 
 	while (true) {
@@ -224,9 +252,28 @@ float get_voltage(uint16_t y, afeChannel_t ch) {
   if (val < 0.0f) val = 0.0f;
   if (val > 65535.0f) val = 65535.0f;
 
-  uint16_t adc_val = 4095 - (int16_t)val;
+  uint16_t adc_val = ADC_RESOLUTION - (int16_t)val - 1;
   float voltage = afeCore_sample2VoltageCal(adc_val, ch);
   return voltage;
+}
+
+void float_to_string(float val, char *out, size_t out_len) {
+  int sign = (val < 0.0f) ? -1 : 1;
+  float abs_val = val * sign;
+
+  int int_part = (int)abs_val;
+  int frac_part = (int)((abs_val - int_part) * 100.0f + 0.5f);
+
+  if (frac_part >= 100) {
+    frac_part = 0;
+    int_part += 1;
+  }
+
+  if (sign < 0) {
+    snprintf(out, out_len, "-%d.%02dV", int_part, frac_part);
+  } else {
+    snprintf(out, out_len, "%d.%02dV", int_part, frac_part);
+  }
 }
 
 void apply_autoset(RingBuffer *rb, ViewState *view) {
@@ -325,26 +372,35 @@ void trigger_logic() {
   }
 
   RingBuffer* rb = (trigger.selected_channel == CHANNEL_1) ? &rb_ch1 : &rb_ch2;
-  ViewState *view_ptr = (trigger.selected_channel == CHANNEL_1) ? &ch1_view : &ch2_view;
+  ViewState* view = (trigger.selected_channel == CHANNEL_1) ? &ch1_view : &ch2_view;
   bool trigger_activated = false;
-  int start_value = RESOLUTION_X / 2 * timebase.x_zoom;
+  int start_value = RESOLUTION_X / 2 * timebase.x_zoom * view->x_multiplier + 0.5f;
 
 	for (int i = start_value; i < BUF_LEN + start_value; ++i) {
 		size_t index = (rb->write_head - i + 2 * BUF_LEN) % BUF_LEN;
 		uint16_t value1 = rb->samples[index];
 		uint16_t value2 = rb->samples[(index + 1) % BUF_LEN];
-    uint16_t read_head_index = (index + start_value) % BUF_LEN;
+    uint16_t ch1_read_head_index;
+    uint16_t ch2_read_head_index;
+    if (trigger.selected_channel == CHANNEL_1) {
+      ch1_read_head_index = (index + start_value) % BUF_LEN;
+      ch2_read_head_index = ((index + start_value) * ch2_view.x_multiplier) % BUF_LEN;
+    } else {
+      ch1_read_head_index = (uint16_t)((index + start_value) / ch2_view.x_multiplier + 0.5f) % BUF_LEN;
+      ch2_read_head_index = (index + start_value) % BUF_LEN;
+
+    }
 		if (trigger.level >= value1 && trigger.level < value2) {
       trigger.is_triggered = true;
       trigger_activated = true;
-			rb_ch1.read_head = read_head_index;
-      rb_ch2.read_head = read_head_index;
+			rb_ch1.read_head = ch1_read_head_index;
+      rb_ch2.read_head = ch2_read_head_index;
 			return;
 		} else if (trigger.level <= value1 && trigger.level > value2) {
       trigger.is_triggered = true;
       trigger_activated = true;
-			rb_ch1.read_head = read_head_index;
-      rb_ch2.read_head = read_head_index;
+			rb_ch1.read_head = ch1_read_head_index;
+      rb_ch2.read_head = ch2_read_head_index;
 			return;
 		}
 	}
@@ -387,6 +443,11 @@ void draw_cursor(uint32_t color) {
   if (cursor_1.en) {
     tft.drawFastHLine(0, RESOLUTION_Y - cursor_1.y, RESOLUTION_X, color);
     tft.drawFastVLine(cursor_1.x, 0, RESOLUTION_Y, color);
+    float val = get_voltage(RESOLUTION_Y - cursor_1.y, CHANNEL_1);
+    char voltage[STR_LEN];
+    float_to_string(val, voltage, STR_LEN);
+    tft.setTextSize(TFT_SMALL);
+    tft.drawString(voltage, 230, 20);
   }
 }
 
@@ -401,7 +462,7 @@ void draw_graph(RingBuffer *rb, ViewState view, int32_t color) {
     int32_t sample_index =
       head_snapshot
       - timebase.x_offset
-      - (int32_t)(i * timebase.x_zoom);
+      - (int32_t)(i * timebase.x_zoom * view.x_multiplier);
 
     while (sample_index < 0)
       sample_index += BUF_LEN;
@@ -430,6 +491,7 @@ void draw_graph(RingBuffer *rb, ViewState view, int32_t color) {
       tft.drawFastVLine(timebase.x_offset * timebase.x_zoom, 0, RESOLUTION_Y, color);
     }
 */
+
 void update_grid() {
 	for (uint16_t i = GRID_OFFSET_X; i < RESOLUTION_X; i += GRID_OFFSET_X) {
 		
@@ -437,9 +499,7 @@ void update_grid() {
 	for (uint16_t i = 0; i < GRID_COUNT_Y-1; i++) {
     uint16_t y = (i+1) * GRID_OFFSET_Y;
     float val = get_voltage(y, ch_states.ch_selected);
-    int int_part = (int)val;
-    int frac_part = abs((int)((val - int_part) * 100));
-    snprintf(grid_values.y[i], STR_LEN, "%d.%02d", int_part, frac_part);
+    float_to_string(val, grid_values.y[i], STR_LEN);
 	}
 }
 
@@ -453,6 +513,33 @@ void draw_grid(ViewState view) {
     tft.setTextSize(TFT_SMALL);
     tft.drawString(grid_values.y[i], 10, y-3);
 	}
+}
+
+void draw_ui_text() {
+  uint16_t select_color = tft.color565(140, 170, 200);
+  std::strncpy(ui_text.current_state,
+               state_names[static_cast<int>(state)],
+               sizeof(ui_text.current_state));
+  ui_text.current_state[sizeof(ui_text.current_state) - 1] = '\0';
+  tft.setTextSize(TFT_SMALL);
+  tft.drawString(ui_text.current_state, 270, 7);
+  if (ch_states.ch1_active) {
+    if (ch_states.ch_selected == CHANNEL_1) {
+      tft.setTextColor(ch_states.ch1_color, select_color);
+    } else {
+      tft.setTextColor(ch_states.ch1_color);
+    }
+    tft.drawString(ui_text.ch1, 230, 7);
+  }
+  if (ch_states.ch2_active) {
+    if (ch_states.ch_selected == CHANNEL_2) {
+      tft.setTextColor(ch_states.ch2_color, select_color);
+    } else {
+      tft.setTextColor(ch_states.ch2_color);
+    }
+    tft.drawString(ui_text.ch2, 250, 7);
+  }
+  tft.setTextColor(TFT_WHITE);
 }
 
 void button_logic(ViewState *view) {
@@ -600,15 +687,16 @@ void oscilloscope_task(void *pvParameters) {
         button_logic(&ch2_view);
         draw_grid(ch2_view);
       }
+      draw_ui_text();
       trigger_logic();
       if (ch_states.ch1_active) {
-        draw_graph(&rb_ch1, ch1_view, TFT_GREEN);
+        draw_graph(&rb_ch1, ch1_view, ch_states.ch1_color);
         if (trigger.selected_channel == CHANNEL_1) {
           draw_trigger(CHANNEL_1, TFT_CYAN);
         }
       }
       if (ch_states.ch2_active) {
-        draw_graph(&rb_ch2, ch2_view, TFT_YELLOW);
+        draw_graph(&rb_ch2, ch2_view, ch_states.ch2_color);
         if (trigger.selected_channel == CHANNEL_2) {
           draw_trigger(CHANNEL_2, TFT_MAGENTA);
         }
@@ -627,5 +715,5 @@ Cursors
 Trigger settings
 Math
 Time values for x-axis
-Text cueues for UI actions
+Text cues for UI actions
 */
