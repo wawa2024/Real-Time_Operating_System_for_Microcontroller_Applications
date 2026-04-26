@@ -237,10 +237,8 @@ void add_sample( uint16_t val, afeChannel_t ch )
 
   RingBuffer *rb = ch == CHANNEL_1 ? ch1_ptr : ch2_ptr;
 
-
-
 	rb->samples[rb->write_head] = ADC_RESOLUTION - 1 - rollingAverage( val, ch );
-	rb->write_head = (rb->write_head + 1) % BUF_LEN;
+	rb->write_head = (rb->write_head + 1) % rb->buffer_size;
 }
 
 void adc_task(void *pvParameters) {
@@ -574,7 +572,7 @@ void draw_ui_text() {
 void set_x_zoom(float zoom) {
   timebase.x_zoom = zoom;
   
-  if (timebase.x_zoom < 0.01) timebase.x_zoom = 0.01;
+  if (timebase.x_zoom < 0.001) timebase.x_zoom = 0.001;
   if (timebase.x_zoom > 20)  timebase.x_zoom = 20;
 
   timebase.required_sample_rate = (uint16_t)(RESOLUTION_X / timebase.x_zoom + 0.5f);
