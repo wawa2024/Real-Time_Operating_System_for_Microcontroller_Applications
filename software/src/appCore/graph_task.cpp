@@ -17,13 +17,13 @@
 #define GRID_COUNT_Y 15
 #define GRID_OFFSET_X (RESOLUTION_X / GRID_COUNT_X) // 16
 #define GRID_OFFSET_Y (RESOLUTION_Y / GRID_COUNT_Y) // 16
-#define REFRESH_RATE_MS 300
+#define REFRESH_RATE_MS 100
 #define ADC_RESOLUTION 4096
-#define BUF_LEN 10240
-#define ZERO_VOLTS 2048.0
 #define MAX_VOLTS 16.0
 #define TIMESTEP_MS 1
 #define STR_LEN 20
+#define CH1_BUF_SIZE 1180
+#define CH2_BUF_SIZE (CH1_BUF_SIZE * 20)
 
 /////////////////////////////// 3.Types ////////////////////////////////
 
@@ -41,10 +41,9 @@ enum class State {
 };
 
 typedef struct {
-  uint16_t samples[BUF_LEN];
-  size_t write_head = 0;
-  size_t read_head = 0;
-} RingBuffer;
+  float x_zoom;
+  int32_t x_offset;
+} Timebase;
 
 typedef struct {
   float y_zoom;
@@ -53,9 +52,11 @@ typedef struct {
 } ViewState;
 
 typedef struct {
-  float x_zoom;
-  int32_t x_offset;
-} Timebase;
+  uint16_t *samples;
+  uint32_t buffer_size;
+  size_t write_head = 0;
+  size_t read_head = 0;
+} RingBuffer;
 
 typedef struct {
   bool stop = false;
@@ -116,14 +117,6 @@ TaskHandle_t adc;
 
 //////////////////////////// 5.1.Variables /////////////////////////////
 
-RingBuffer rb_ch1{};
-RingBuffer rb_ch2{};
-
-RingBuffer copy_rb_ch1{};
-RingBuffer copy_rb_ch2{};
-
-ChannelState ch_states{};
-
 Timebase timebase = {
   .x_zoom = 2.0,
   .x_offset = 0
@@ -140,6 +133,40 @@ ViewState ch2_view = {
   .y_offset = 2385,
   .x_multiplier = 20
 };
+
+uint16_t rb_ch1_storage[CH1_BUF_SIZE];
+uint16_t rb_ch2_storage[CH2_BUF_SIZE];
+
+RingBuffer rb_ch1{
+  .samples = rb_ch1_storage,
+  .buffer_size = CH1_BUF_SIZE,
+  .write_head = 0,
+  .read_head = 0
+};
+RingBuffer rb_ch2{
+  .samples = rb_ch2_storage,
+  .buffer_size = CH2_BUF_SIZE,
+  .write_head = 0,
+  .read_head = 0
+};
+
+uint16_t copy_rb_ch1_storage[CH1_BUF_SIZE];
+uint16_t copy_rb_ch2_storage[CH2_BUF_SIZE];
+
+RingBuffer copy_rb_ch1{
+  .samples = copy_rb_ch1_storage,
+  .buffer_size = CH1_BUF_SIZE,
+  .write_head = 0,
+  .read_head = 0
+};
+RingBuffer copy_rb_ch2{
+  .samples = copy_rb_ch2_storage,
+  .buffer_size = CH2_BUF_SIZE,
+  .write_head = 0,
+  .read_head = 0
+};
+
+ChannelState ch_states{};
 
 Trigger trigger = {
   .level = 2335,
@@ -175,7 +202,7 @@ void add_sample( uint16_t val, afeChannel_t ch ) {
   RingBuffer *rb = ch == CHANNEL_1 ? ch1_ptr : ch2_ptr;
 
 	rb->samples[rb->write_head] = ADC_RESOLUTION - 1 - val;
-	rb->write_head = (rb->write_head + 1) % BUF_LEN;
+	rb->write_head = (rb->write_head + 1) % rb->buffer_size;
 }
 
 void adc_task(void *pvParameters) {
@@ -281,7 +308,7 @@ void apply_autoset(RingBuffer *rb, ViewState *view) {
   uint16_t max_val = rb->samples[0];
   uint16_t val_delta = max_val - min_val;
 
-  for (size_t i = 1; i < BUF_LEN; ++i) {
+  for (size_t i = 1; i < rb->buffer_size; ++i) {
     if (rb->samples[i] < min_val) {
       min_val = rb->samples[i];
     }
@@ -297,15 +324,15 @@ void apply_autoset(RingBuffer *rb, ViewState *view) {
   }
 
   uint32_t sum = 0;
-  for (int i = 0; i < BUF_LEN; i++) {
+  for (size_t i = 0; i < rb->buffer_size; i++) {
     sum += rb->samples[i];
   }
-  uint16_t mean = sum / BUF_LEN;
+  uint32_t mean = sum / (rb->buffer_size + 0.5f);
 
-  uint16_t crossings[100];
-  uint16_t count = 0;
+  uint32_t crossings[100];
+  uint32_t count = 0;
 
-  for (uint16_t i = 1; i < BUF_LEN; i++) {
+  for (size_t i = 1; i < rb->buffer_size; i++) {
     if (rb->samples[i-1] < mean - 5 && rb->samples[i] >= mean + 5) {
       if (count < 100) crossings[count++] = i;
     }
@@ -338,16 +365,25 @@ void autoset() {
   }
 }
 
+void ringbuffer_copy(RingBuffer *dst, const RingBuffer *src) {
+  dst->buffer_size = src->buffer_size;
+  dst->write_head = src->write_head;
+  dst->read_head  = src->read_head;
+
+  memcpy(dst->samples, src->samples,
+         src->buffer_size * sizeof(uint16_t));
+}
+
 void run() {
   ch_states.stop = false;
-  rb_ch1 = copy_rb_ch1;
-  rb_ch2 = copy_rb_ch2;
+  ringbuffer_copy(&rb_ch1, &copy_rb_ch1);
+  ringbuffer_copy(&rb_ch2, &copy_rb_ch2);
 }
 
 void stop() {
   ch_states.stop = true;
-  copy_rb_ch1 = rb_ch1;
-  copy_rb_ch2 = rb_ch2;
+  ringbuffer_copy(&copy_rb_ch1, &rb_ch1);
+  ringbuffer_copy(&copy_rb_ch2, &rb_ch2);
 }
 
 void toggle_run_stop() {
@@ -360,8 +396,8 @@ void toggle_run_stop() {
 
 void set_read_heads() {
   trigger.is_triggered = false;
-  rb_ch1.read_head = (rb_ch1.write_head - RESOLUTION_X + BUF_LEN) % BUF_LEN;
-  rb_ch2.read_head = (rb_ch2.write_head - RESOLUTION_X + BUF_LEN) % BUF_LEN;
+  rb_ch1.read_head = (rb_ch1.write_head - RESOLUTION_X + rb_ch1.buffer_size) % rb_ch1.buffer_size;
+  rb_ch2.read_head = (rb_ch2.write_head - RESOLUTION_X + rb_ch2.buffer_size) % rb_ch2.buffer_size;
 }
 
 void trigger_logic() {
@@ -376,18 +412,18 @@ void trigger_logic() {
   bool trigger_activated = false;
   int start_value = RESOLUTION_X / 2 * timebase.x_zoom * view->x_multiplier + 0.5f;
 
-	for (int i = start_value; i < BUF_LEN + start_value; ++i) {
-		size_t index = (rb->write_head - i + 2 * BUF_LEN) % BUF_LEN;
+	for (size_t i = start_value; i < rb->buffer_size + start_value; ++i) {
+		size_t index = (rb->write_head - i + 2 * rb->buffer_size) % rb->buffer_size;
 		uint16_t value1 = rb->samples[index];
-		uint16_t value2 = rb->samples[(index + 1) % BUF_LEN];
+		uint16_t value2 = rb->samples[(index + 1) % rb->buffer_size];
     uint16_t ch1_read_head_index;
     uint16_t ch2_read_head_index;
     if (trigger.selected_channel == CHANNEL_1) {
-      ch1_read_head_index = (index + start_value) % BUF_LEN;
-      ch2_read_head_index = ((index + start_value) * ch2_view.x_multiplier) % BUF_LEN;
+      ch1_read_head_index = (index + start_value) % rb_ch1.buffer_size;
+      ch2_read_head_index = ((index + start_value) * ch2_view.x_multiplier) % rb_ch2.buffer_size;
     } else {
-      ch1_read_head_index = (uint16_t)((index + start_value) / ch2_view.x_multiplier + 0.5f) % BUF_LEN;
-      ch2_read_head_index = (index + start_value) % BUF_LEN;
+      ch1_read_head_index = (uint16_t)((index + start_value) / ch2_view.x_multiplier + 0.5f) % rb_ch1.buffer_size;
+      ch2_read_head_index = (index + start_value) % rb_ch2.buffer_size;
 
     }
 		if (trigger.level >= value1 && trigger.level < value2) {
@@ -420,23 +456,10 @@ void draw_trigger(afeChannel_t ch, uint32_t color) {
 
   int y = RESOLUTION_Y / 2 - (int)adjusted;
 	tft.drawFastHLine(0, y, RESOLUTION_X, color);
-/*
+
   if (trigger.is_triggered) {
-    int32_t sample_index =
-    head_snapshot
-    - timebase.x_offset
-    - (int32_t)(i * timebase.x_zoom);
-    uint16_t val = rb_ptr->samples[rb_ptr->read_head];
 
-    float adjusted = (val - view_ptr->y_offset) * view_ptr->y_zoom + 0.5f;
-
-    int y = RESOLUTION_Y / 2 - (int)adjusted;
-
-    if (y < 0) y = 0;
-    if (y >= RESOLUTION_Y) y = RESOLUTION_Y - 1;
-    tftFastVLine()
   }
-    */
 }
 
 void draw_cursor(uint32_t color) {
@@ -465,9 +488,9 @@ void draw_graph(RingBuffer *rb, ViewState view, int32_t color) {
       - (int32_t)(i * timebase.x_zoom * view.x_multiplier);
 
     while (sample_index < 0)
-      sample_index += BUF_LEN;
+      sample_index += rb->buffer_size;
 
-    sample_index %= BUF_LEN;
+    sample_index %= rb->buffer_size;
 
     uint16_t val = rb->samples[sample_index];
 
@@ -486,11 +509,6 @@ void draw_graph(RingBuffer *rb, ViewState view, int32_t color) {
     prev_y = y;
   }
 }
-/*
-    if (i == 0 && trigger.is_triggered) {
-      tft.drawFastVLine(timebase.x_offset * timebase.x_zoom, 0, RESOLUTION_Y, color);
-    }
-*/
 
 void update_grid() {
 	for (uint16_t i = GRID_OFFSET_X; i < RESOLUTION_X; i += GRID_OFFSET_X) {
@@ -561,6 +579,7 @@ void button_logic(ViewState *view) {
     state = State::MEASURE;
   } else if ( inputs & BTN_AUTOSET ) {
     autoset();
+    update_grid();
   } else if ( inputs & BTN_STOP ) {
     toggle_run_stop();
   } else if ( inputs & BTN_CURSORS ) {
@@ -673,13 +692,11 @@ void oscilloscope_task(void *pvParameters) {
   update_grid();
   
   tft.fillScreen(TFT_BLACK);
-//  spr.createSprite(RESOLUTION_X, RESOLUTION_Y);
 
 	xTaskCreate( adc_task, "ADC", 4096, NULL, 1, &adc );
 
     while(true) {
       tft.fillScreen(TFT_BLACK);
-//        spr.fillSprite(TFT_BLACK);
       if (ch_states.ch_selected == CHANNEL_1) {
         button_logic(&ch1_view);
         draw_grid(ch1_view);
@@ -702,8 +719,7 @@ void oscilloscope_task(void *pvParameters) {
         }
       }
       draw_cursor(TFT_SKYBLUE);
-//        spr.pushSprite(RESOLUTION_X, RESOLUTION_Y);
-      vTaskDelay(pdMS_TO_TICKS(100));
+      vTaskDelay(pdMS_TO_TICKS(REFRESH_RATE_MS));
     }
 
 }
@@ -715,5 +731,4 @@ Cursors
 Trigger settings
 Math
 Time values for x-axis
-Text cues for UI actions
 */
