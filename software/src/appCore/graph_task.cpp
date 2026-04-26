@@ -167,14 +167,41 @@ UiText ui_text = {
 
 //////////////////////////// 5.2.Functions /////////////////////////////
 
-void add_sample( uint16_t val, afeChannel_t ch ) {
+static const uint32_t rollingAverageLength = 3;
+
+typedef struct
+{
+  uint16_t buff[rollingAverageLength];
+  uint32_t index;
+  uint32_t sum;
+} rollingAvg_t;
+
+uint16_t rollingAverage( uint16_t sample, afeChannel_t ch )
+{
+  static rollingAvg_t ch1_avg;
+  static rollingAvg_t ch2_avg;
+  
+  rollingAvg_t *avg = ch == CHANNEL_1 ? &ch1_avg : &ch2_avg;
+
+  avg->sum -= avg->buff[avg->index];
+  avg->sum += sample;
+  avg->buff[avg->index] = sample;
+  if( ++avg->index >= rollingAverageLength ) { avg->index = 0; }
+
+  return (uint16_t)(avg->sum / rollingAverageLength);
+}
+
+void add_sample( uint16_t val, afeChannel_t ch ) 
+{
 
   RingBuffer *ch1_ptr = ch_states.stop ? &copy_rb_ch1 : &rb_ch1;
   RingBuffer *ch2_ptr = ch_states.stop ? &copy_rb_ch2 : &rb_ch2;
 
   RingBuffer *rb = ch == CHANNEL_1 ? ch1_ptr : ch2_ptr;
 
-	rb->samples[rb->write_head] = ADC_RESOLUTION - 1 - val;
+
+
+	rb->samples[rb->write_head] = ADC_RESOLUTION - 1 - rollingAverage( val, ch );
 	rb->write_head = (rb->write_head + 1) % BUF_LEN;
 }
 
