@@ -26,7 +26,7 @@
 #define STR_LEN 20
 #define CH1_MULTIPLIER 1
 #define CH2_MULTIPLIER 1
-#define CH1_BUF_SIZE 10240
+#define CH1_BUF_SIZE 8000
 #define CH2_BUF_SIZE (CH1_BUF_SIZE * CH2_MULTIPLIER)
 #define CH1_SAMPLE_RATE 20000
 #define CH2_SAMPLE_RATE 20000
@@ -78,6 +78,9 @@ typedef struct {
   bool ch2_active = true;
   int32_t ch1_color = TFT_YELLOW;
   int32_t ch2_color = TFT_GREEN;
+  bool measure = false;
+  bool math = false;
+  int32_t math_color = TFT_MAGENTA;
 } ChannelState;
 
 typedef struct {
@@ -162,8 +165,15 @@ ViewState ch2_view = {
   .x_multiplier = CH2_MULTIPLIER
 };
 
+ViewState math_view = {
+  .y_zoom = 1.0,
+  .y_offset = 2385,
+  .x_multiplier = CH2_MULTIPLIER
+};
+
 uint16_t rb_ch1_storage[CH1_BUF_SIZE];
 uint16_t rb_ch2_storage[CH2_BUF_SIZE];
+uint16_t rb_math_storage[CH2_BUF_SIZE];
 
 RingBuffer rb_ch1{
   .samples = rb_ch1_storage,
@@ -180,8 +190,17 @@ RingBuffer rb_ch2{
   .read_head = 0
 };
 
+RingBuffer rb_math{
+  .samples = rb_math_storage,
+  .buffer_size = CH2_BUF_SIZE,
+  .sample_rate = CH2_SAMPLE_RATE,
+  .write_head = 0,
+  .read_head = 0
+};
+
 uint16_t copy_rb_ch1_storage[CH1_BUF_SIZE];
 uint16_t copy_rb_ch2_storage[CH2_BUF_SIZE];
+uint16_t copy_rb_math_storage[CH2_BUF_SIZE];
 
 RingBuffer copy_rb_ch1{
   .samples = copy_rb_ch1_storage,
@@ -192,6 +211,14 @@ RingBuffer copy_rb_ch1{
 };
 RingBuffer copy_rb_ch2{
   .samples = copy_rb_ch2_storage,
+  .buffer_size = CH2_BUF_SIZE,
+  .sample_rate = CH2_SAMPLE_RATE,
+  .write_head = 0,
+  .read_head = 0
+};
+
+RingBuffer copy_rb_math{
+  .samples = rb_math_storage,
   .buffer_size = CH2_BUF_SIZE,
   .sample_rate = CH2_SAMPLE_RATE,
   .write_head = 0,
@@ -367,7 +394,11 @@ int32_t get_time_us(uint16_t x) {
 }
 
 float get_voltage(uint16_t y, afeChannel_t ch) {
-  ViewState *view_ptr = (ch == CHANNEL_1) ? &ch1_view : &ch2_view;
+  ViewState *view_ptr = nullptr;
+  if (ch == CHANNEL_1) view_ptr = &ch1_view;
+  else if (ch == CHANNEL_2) view_ptr = &ch2_view;
+  else view_ptr = &math_view;
+
   if (view_ptr->y_zoom == 0.0f)
     return 0;
 
@@ -382,7 +413,7 @@ float get_voltage(uint16_t y, afeChannel_t ch) {
   return voltage;
 }
 
-void us_to_string(int32_t us, char *out, size_t out_len) {
+void us_to_string(int32_t us, char *out, size_t out_len, const char* units[3]) {
   char sign = ' ';
   uint32_t abs_us;
 
@@ -398,13 +429,13 @@ void us_to_string(int32_t us, char *out, size_t out_len) {
   uint32_t factor;
 
   if (abs_us >= 1000000UL) {
-    unit = "s";
+    unit = units[0];
     factor = 1000000UL;
   } else if (abs_us >= 1000UL) {
-    unit = "m";
+    unit = units[1];
     factor = 1000UL;
   } else {
-    unit = "u";
+    unit = units[2];
     factor = 1UL;
   }
 
@@ -462,6 +493,12 @@ void set_x_zoom(float zoom) {
   timebase.required_sample_rate = (uint16_t)(RESOLUTION_X / timebase.x_zoom + 0.5f);
   timebase.time_per_div_us = (uint32_t)((float)GRID_OFFSET_X * timebase.x_zoom * TIME_SCALER + 0.5f);
   timebase.time_per_pixel_us = timebase.x_zoom * TIME_SCALER;
+}
+
+void calculate_math_buffer() {
+  for (int i = 0; i < CH2_BUF_SIZE; i++) {
+    rb_math.samples[i] = (rb_ch1.samples[i] + rb_ch2.samples[i]) / 2;
+  }
 }
 
 void apply_autoset(RingBuffer *rb, ViewState *view) {
@@ -536,6 +573,9 @@ void autoset() {
   if (ch_states.ch_selected == CHANNEL_2 && ch_states.ch2_active) {
     apply_autoset(&rb_ch2, &ch2_view);
   }
+  if (ch_states.ch_selected == CHANNEL_MATH && ch_states.math) {
+    apply_autoset(&rb_math, &math_view);
+  }
 }
 
 void ringbuffer_copy(RingBuffer *dst, const RingBuffer *src) {
@@ -551,12 +591,14 @@ void run() {
   ch_states.stop = false;
   ringbuffer_copy(&rb_ch1, &copy_rb_ch1);
   ringbuffer_copy(&rb_ch2, &copy_rb_ch2);
+  ringbuffer_copy(&rb_math, &copy_rb_math);
 }
 
 void stop() {
   ch_states.stop = true;
   ringbuffer_copy(&copy_rb_ch1, &rb_ch1);
   ringbuffer_copy(&copy_rb_ch2, &rb_ch2);
+  ringbuffer_copy(&copy_rb_math, &rb_math);
 }
 
 void toggle_run_stop() {
@@ -571,6 +613,7 @@ void set_read_heads() {
   trigger.is_triggered = false;
   rb_ch1.read_head = (rb_ch1.write_head - RESOLUTION_X + rb_ch1.buffer_size) % rb_ch1.buffer_size;
   rb_ch2.read_head = (rb_ch2.write_head - RESOLUTION_X + rb_ch2.buffer_size) % rb_ch2.buffer_size;
+  rb_math.read_head = (rb_math.write_head - RESOLUTION_X + rb_math.buffer_size) % rb_math.buffer_size;
 }
 
 void trigger_logic() {
@@ -619,7 +662,10 @@ void trigger_logic() {
 }
 
 void draw_trigger(afeChannel_t ch, uint32_t color) {
-  ViewState *view_ptr = (ch == CHANNEL_1) ? &ch1_view : &ch2_view;
+  ViewState *view_ptr = nullptr;
+  if (ch == CHANNEL_1) view_ptr = &ch1_view;
+  else if (ch == CHANNEL_2) view_ptr = &ch2_view;
+  else view_ptr = &math_view;
 //  RingBuffer *rb_ptr = (ch == CHANNEL_1) ? &rb_ch1 : &rb_ch2;
 
   if (trigger.mode == NO_TRIGGER) return;
@@ -658,7 +704,8 @@ void draw_cursor(Cursor *cursor) {
     char voltage[STR_LEN];
     char time[STR_LEN];
     float_to_string(cursor->voltage, voltage, STR_LEN);
-    us_to_string(cursor->time_us, time, STR_LEN);
+    const char* units[3] = {"s", "m", "u"};
+    us_to_string(cursor->time_us, time, STR_LEN, units);
     tft.setTextSize(TFT_SMALL);
     tft.setTextColor(cursor->color);
     tft.drawString(voltage, 230, cursor->offset_y);
@@ -667,23 +714,37 @@ void draw_cursor(Cursor *cursor) {
   }
 }
 
+int32_t microseconds_to_millihz(int32_t us) {
+  if (us <= 0) return 0;
+
+  return (int32_t)(1000000000LL / us);
+}
+
 void draw_cursor_difference() {
-  if (cursor_1.en && cursor_2.en) {
+  if (cursor_1.en && cursor_2.en && ch_states.measure) {
     float voltage = cursor_1.voltage - cursor_2.voltage;
-    float time_us = cursor_1.time_us - cursor_2.time_us;
+    int32_t time_us = cursor_1.time_us - cursor_2.time_us;
 
     if (voltage < 0.0f) voltage *= -1.0f;
-    if (time_us < 0.0f) time_us *= -1.0f;
+    if (time_us < 0.0f) time_us *= -1;
 
     char voltage_string[STR_LEN];
     char time_string[STR_LEN];
+    char frequency_string[STR_LEN];
     float_to_string(voltage, voltage_string, STR_LEN);
-    us_to_string(time_us, time_string, STR_LEN);
+
+    const char* units[3] = {"s ", "ms", "us"};
+    us_to_string(time_us, time_string, STR_LEN, units);
+    
+    int32_t mHz = microseconds_to_millihz(time_us);
+    const char* freq_units[3] = {"kHz", "Hz ", "mHz"};
+    us_to_string(mHz, frequency_string, STR_LEN, freq_units);
 
     tft.setTextSize(TFT_SMALL);
     tft.setTextColor(TFT_WHITE);
     tft.drawString(voltage_string, 230, 48);
     tft.drawString(time_string, 270, 48);
+    tft.drawString(frequency_string, 250, 62);
   }
 }
 
@@ -726,7 +787,8 @@ void draw_graph(RingBuffer *rb, ViewState view, int32_t color) {
 void update_grid() {
 	for (uint16_t i = 0; i < GRID_COUNT_X - 1; i++) {
     int32_t microseconds = timebase.time_per_div_us * (int32_t)((i+1) - (uint16_t)((float)(GRID_COUNT_X) * 0.5f + 0.5f));
-    us_to_string(microseconds, grid_values.x[i], STR_LEN);
+    const char* units[3] = {"s", "m", "u"};
+    us_to_string(microseconds, grid_values.x[i], STR_LEN, units);
 	}
 	for (uint16_t i = 0; i < GRID_COUNT_Y - 1; i++) {
     uint16_t y = (i+1) * GRID_OFFSET_Y;
@@ -887,7 +949,16 @@ void button_logic(ViewState *view) {
     state = State::TRIGGER_SETTINGS;
     trigger.selected_channel = (trigger.selected_channel == CHANNEL_1) ? CHANNEL_2 : CHANNEL_1;
   } else if ( inputs & BTN_MEASURE ) {
-    state = State::MEASURE;
+    if (!ch_states.measure) ch_states.measure = true;
+    else ch_states.measure = false;
+  } else if ( inputs & BTN_MATH ) {
+    if (!ch_states.math) {
+      ch_states.math = true;
+      ch_states.ch_selected = CHANNEL_MATH;
+    } else {
+      ch_states.math = false;
+      ch_states.ch_selected = CHANNEL_1;
+    }
   } else if ( inputs & BTN_AUTOSET ) {
     autoset();
     update_grid();
@@ -902,7 +973,7 @@ void button_logic(ViewState *view) {
       state = State::CURSOR_1;
     }
   } else if ( inputs & BTN_CH1 ) {
-    if (ch_states.ch_selected == CHANNEL_2) {
+    if (ch_states.ch_selected != CHANNEL_1) {
       ch_states.ch1_active = true;
       ch_states.ch_selected = CHANNEL_1;
     } else {
@@ -911,7 +982,7 @@ void button_logic(ViewState *view) {
     }
     update_grid();
   } else if ( inputs & BTN_CH2 ) {
-    if (ch_states.ch_selected == CHANNEL_1) {
+    if (ch_states.ch_selected != CHANNEL_2) {
       ch_states.ch2_active = true;
       ch_states.ch_selected = CHANNEL_2;
     } else {
@@ -995,6 +1066,10 @@ void oscilloscope_task(void *pvParameters) {
         if (trigger.selected_channel == CHANNEL_2) {
           draw_trigger(CHANNEL_2, TFT_MAGENTA);
         }
+      }
+      if (ch_states.math) {
+        calculate_math_buffer();
+        draw_graph(&rb_math, math_view, ch_states.math_color);
       }
       draw_cursor(&cursor_1);
       draw_cursor(&cursor_2);
