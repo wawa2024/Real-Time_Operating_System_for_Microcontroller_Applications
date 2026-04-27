@@ -109,6 +109,7 @@ typedef struct {
 typedef struct {
   char ch1[4];
   char ch2[4];
+  char math[5];
   char current_state[13];
 } UiText;
 
@@ -261,6 +262,7 @@ State state = DEFAULT_STATE;
 UiText ui_text = {
   .ch1 = "CH1",
   .ch2 = "CH2",
+  .math = "MATH",
   .current_state = "position"
 };
 
@@ -836,6 +838,14 @@ void draw_ui_text() {
     }
     tft.drawString(ui_text.ch2, 250, 7);
   }
+  if (ch_states.math) {
+    if (ch_states.ch_selected == CHANNEL_MATH) {
+      tft.setTextColor(ch_states.math_color, select_color);
+    } else {
+      tft.setTextColor(ch_states.math_color);
+    }
+    tft.drawString(ui_text.math, 200, 7);
+  }
   tft.setTextColor(TFT_WHITE);
 }
 
@@ -1049,9 +1059,12 @@ void oscilloscope_task(void *pvParameters) {
       if (ch_states.ch_selected == CHANNEL_1) {
         button_logic(&ch1_view);
         draw_grid(ch1_view);
-      } else {
+      } else if (ch_states.ch_selected == CHANNEL_2) {
         button_logic(&ch2_view);
         draw_grid(ch2_view);
+      } else {
+        button_logic(&math_view);
+        draw_grid(math_view);
       }
       draw_ui_text();
       trigger_logic();
@@ -1070,6 +1083,9 @@ void oscilloscope_task(void *pvParameters) {
       if (ch_states.math) {
         calculate_math_buffer();
         draw_graph(&rb_math, math_view, ch_states.math_color);
+        if (trigger.selected_channel == CHANNEL_MATH) {
+          draw_trigger(CHANNEL_MATH, TFT_ORANGE);
+        }
       }
       draw_cursor(&cursor_1);
       draw_cursor(&cursor_2);
