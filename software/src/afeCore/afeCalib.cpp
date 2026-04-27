@@ -89,11 +89,6 @@ LOCAL void exitIf( uint32_t arg )
 {
     if( arg )
     {
-        if( !isCalibrationDone )
-        {
-            // Reset the partial calibration
-            afeCore_resetCalibration();
-        }
 
         mutex_release();
         vTaskDelete(NULL);  
