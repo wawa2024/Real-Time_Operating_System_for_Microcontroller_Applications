@@ -99,6 +99,9 @@ extern bool hmiCore_eventFound( hmiEventData_t e, hmiEvent_t event,
 // Reads a hmiEventData_t queue to end, returns last element
 extern hmiEventData_t getinputs(QueueHandle_t q);
 
+// Reads a hmiEventData_t queue to end, returns last element
+extern hmiEventData_t get_held_keys(QueueHandle_t q);
+
 #ifdef __cplusplus
 }
 #endif

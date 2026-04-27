@@ -110,6 +110,7 @@ typedef enum
 {
     CHANNEL_1 = 0,
     CHANNEL_2,
+    CHANNEL_MATH,
     LAST_CHANNEL
 } afeChannel_t;
 
