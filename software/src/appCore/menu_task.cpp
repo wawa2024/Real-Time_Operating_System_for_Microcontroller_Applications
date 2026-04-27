@@ -33,7 +33,7 @@ static void info_task(void*);
 
 menu_t items[MENU_TASKS] = {
   {info_task,(char*)"About version", 4096}
-  ,{oscilloscope_task,(char*)"Oscilloscope", 16384*4}
+  ,{oscilloscope_task,(char*)"Oscilloscope", 16384*2}
   ,{snake_task,(char*)"Snake", 16384}
   ,{telnet_task,(char*)"Telnet",16384}
   ,{afeCore_calibrationTask, (char*)"AFE Cal", 16384}

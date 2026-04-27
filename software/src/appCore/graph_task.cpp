@@ -31,6 +31,7 @@
 #define CH1_SAMPLE_RATE 20000
 #define CH2_SAMPLE_RATE 20000
 #define HALF_RES_X (RESOLUTION_X / 2)
+#define TIME_SCALER (float)(1000.0f / 12.0f)
 
 /////////////////////////////// 3.Types ////////////////////////////////
 
@@ -107,6 +108,13 @@ typedef struct {
   char ch2[4];
   char current_state[13];
 } UiText;
+
+typedef struct {
+  bool up = false;
+  bool down = false;
+  bool left = false;
+  bool right = false;
+} Keys;
 
 //////////////////////////// 4.Declarations ////////////////////////////
 //////////////////////////// 4.1.Variables /////////////////////////////
@@ -218,7 +226,10 @@ Cursor cursor_2 = {
 
 GridValues grid_values{};
 
-State state = State::POSITION;
+Keys held_keys{};
+
+constexpr State DEFAULT_STATE = State::POSITION;
+State state = DEFAULT_STATE;
 
 UiText ui_text = {
   .ch1 = "CH1",
@@ -341,6 +352,11 @@ static void oscilloscope_deinit(){
   Serial.println("[oscilloscope_task]: self-deleting");
   #endif
 
+  held_keys.up = false;
+  held_keys.down = false;
+  held_keys.right = false;
+  held_keys.left = false;
+
   mutex_release();
 
   vTaskDelete(NULL); // self-delete
@@ -444,8 +460,8 @@ void set_x_zoom(float zoom) {
   if (timebase.x_zoom > 20)  timebase.x_zoom = 20;
 
   timebase.required_sample_rate = (uint16_t)(RESOLUTION_X / timebase.x_zoom + 0.5f);
-  timebase.time_per_div_us = (uint32_t)((float)GRID_OFFSET_X * timebase.x_zoom * 100.0f + 0.5f);
-  timebase.time_per_pixel_us = timebase.x_zoom * 100.0f;
+  timebase.time_per_div_us = (uint32_t)((float)GRID_OFFSET_X * timebase.x_zoom * TIME_SCALER + 0.5f);
+  timebase.time_per_pixel_us = timebase.x_zoom * TIME_SCALER;
 }
 
 void apply_autoset(RingBuffer *rb, ViewState *view) {
@@ -618,17 +634,17 @@ void draw_trigger(afeChannel_t ch, uint32_t color) {
   }
 }
 
-void moveCursor(Cursor& cursor, int inputs) {
-  if (inputs & BTN_UP) {
+void move_cursor(Cursor& cursor, int inputs) {
+  if (inputs & BTN_UP || held_keys.up) {
     cursor.y += 5;
   }
-  if (inputs & BTN_DOWN) {
+  if (inputs & BTN_DOWN || held_keys.down) {
     cursor.y -= 5;
   }
-  if (inputs & BTN_RIGHT) {
+  if (inputs & BTN_RIGHT || held_keys.right) {
     cursor.x += 5;
   }
-  if (inputs & BTN_LEFT) {
+  if (inputs & BTN_LEFT || held_keys.left) {
     cursor.x -= 5;
   }
 }
@@ -648,6 +664,26 @@ void draw_cursor(Cursor *cursor) {
     tft.drawString(voltage, 230, cursor->offset_y);
     tft.drawString(time, 270, cursor->offset_y);
     tft.setTextColor(TFT_WHITE);
+  }
+}
+
+void draw_cursor_difference() {
+  if (cursor_1.en && cursor_2.en) {
+    float voltage = cursor_1.voltage - cursor_2.voltage;
+    float time_us = cursor_1.time_us - cursor_2.time_us;
+
+    if (voltage < 0.0f) voltage *= -1.0f;
+    if (time_us < 0.0f) time_us *= -1.0f;
+
+    char voltage_string[STR_LEN];
+    char time_string[STR_LEN];
+    float_to_string(voltage, voltage_string, STR_LEN);
+    us_to_string(time_us, time_string, STR_LEN);
+
+    tft.setTextSize(TFT_SMALL);
+    tft.setTextColor(TFT_WHITE);
+    tft.drawString(voltage_string, 230, 48);
+    tft.drawString(time_string, 270, 48);
   }
 }
 
@@ -741,7 +777,7 @@ void draw_ui_text() {
   tft.setTextColor(TFT_WHITE);
 }
 
-void process_esc() {
+void handle_esc() {
   switch (state) {
     case State::CURSOR_1:
       cursor_1.en = false;
@@ -749,7 +785,7 @@ void process_esc() {
         state = State::CURSOR_2;
         break;
       }
-      state = State::POSITION;
+      state = DEFAULT_STATE;
       break;
     case State::CURSOR_2:
       cursor_2.en = false;
@@ -757,7 +793,12 @@ void process_esc() {
         state = State::CURSOR_1;
         break;
       }
-      state = State::POSITION;
+      state = DEFAULT_STATE;
+      break;
+
+    case State::TRIGGER:
+      trigger.mode = NO_TRIGGER;
+      state = DEFAULT_STATE;
       break;
 
     default:
@@ -766,21 +807,85 @@ void process_esc() {
   }
 }
 
+void handle_scale(ViewState *view, uint32_t inputs) {
+  if (inputs & BTN_UP || held_keys.up) {
+    view->y_zoom *= 1.1f;
+  } else if (inputs & BTN_DOWN || held_keys.down) {
+    view->y_zoom *= 0.9f;
+  } else if (inputs & BTN_RIGHT || held_keys.right) {
+    set_x_zoom(timebase.x_zoom * 0.9f);
+  } else if (inputs & BTN_LEFT || held_keys.left) {
+    set_x_zoom(timebase.x_zoom * 1.1f);
+  } else {
+    return;
+  }
+
+  update_grid();
+}
+
+void handle_position(ViewState *view, uint32_t inputs) {
+  if (inputs & BTN_UP || held_keys.up) {
+    view->y_offset -= (uint16_t)(16.0f / view->y_zoom + 0.5f);
+  } else if (inputs & BTN_DOWN || held_keys.down) {
+    view->y_offset += (uint16_t)(16.0f / view->y_zoom + 0.5f);
+  } else if (inputs & BTN_RIGHT || held_keys.right) {
+    timebase.x_offset += (uint16_t)(32.0f * timebase.x_zoom + 0.5f);
+  } else if (inputs & BTN_LEFT || held_keys.left) {
+    timebase.x_offset -= (uint16_t)(32.0f * timebase.x_zoom + 0.5f);
+  } else {
+    return;
+  }
+
+  update_grid();
+}
+
+void handle_hold_release(hmiEventData_t *data) {
+  bool is_held;
+
+  if (data->event == E_HOLD) {
+    is_held = true;
+    if (data->inputs & BTN_UP) held_keys.up = is_held;
+    if (data->inputs & BTN_DOWN) held_keys.down = is_held;
+    if (data->inputs & BTN_RIGHT) held_keys.right = is_held;
+    if (data->inputs & BTN_LEFT) held_keys.left = is_held;
+  }
+  if (data->event == E_HOLD_RELEASE) {
+    is_held = false;
+    if (data->inputs & BTN_UP) held_keys.up = is_held;
+    if (data->inputs & BTN_DOWN) held_keys.down = is_held;
+    if (data->inputs & BTN_RIGHT) held_keys.right = is_held;
+    if (data->inputs & BTN_LEFT) held_keys.left = is_held;
+  }
+}
+
 void button_logic(ViewState *view) {
   hmiEventData_t data = getinputs(q);
   uint32_t& inputs = data.inputs;
+/*
+  uint32_t inputs;
+  hmiEventData_t all_data;
+  while ( xQueueReceive(q, &all_data, (TickType_t)(10)) == pdTRUE ) {
+    if (all_data.event == E_PRESSED) {
+      inputs = all_data.inputs;
+    }
+    if ( inputs & BTN_ESC ) handle_esc();
 
-  if ( inputs & BTN_ESC ) process_esc();
+    handle_hold_release(&all_data);
+*/
+  if ( inputs & BTN_ESC ) handle_esc();
 
   if ( inputs & BTN_SCALE ) {
-    if (state == State::SCALE) {
-      state = State::POSITION;
-    } else {
+    if (state == State::POSITION) {
       state = State::SCALE;
+    } else {
+      state = State::POSITION;
     }
   } else if ( inputs & BTN_TRIGGER ) {
     state = State::TRIGGER;
     if (trigger.mode == NO_TRIGGER) trigger.mode = AUTO_TRIGGER;
+  } else if ( inputs & BTN_TRIGSET ) {
+    state = State::TRIGGER_SETTINGS;
+    trigger.selected_channel = (trigger.selected_channel == CHANNEL_1) ? CHANNEL_2 : CHANNEL_1;
   } else if ( inputs & BTN_MEASURE ) {
     state = State::MEASURE;
   } else if ( inputs & BTN_AUTOSET ) {
@@ -833,42 +938,18 @@ void button_logic(ViewState *view) {
       break;
 
     case State::SCALE:
-      if (inputs & BTN_UP) {
-        view->y_zoom *= 1.1;
-        update_grid();
-      } else if (inputs & BTN_DOWN) {
-        view->y_zoom *= 0.9;
-        update_grid();
-      } else if (inputs & BTN_RIGHT) {
-        set_x_zoom(timebase.x_zoom * 0.9f);
-        update_grid();
-      } else if (inputs & BTN_LEFT) {
-        set_x_zoom(timebase.x_zoom * 1.1f);
-        update_grid();
-      }
+      handle_scale(view, inputs);
       break;
 
     case State::POSITION:
-      if (inputs & BTN_UP) {
-        view->y_offset -= (uint16_t)(16.0f / view->y_zoom + 0.5f);
-        update_grid();
-      } else if (inputs & BTN_DOWN) {
-        view->y_offset += (uint16_t)(16.0f / view->y_zoom + 0.5f);
-        update_grid();
-      } else if (inputs & BTN_RIGHT) {
-        timebase.x_offset += (uint16_t)(32.0f * timebase.x_zoom + 0.5f);
-        update_grid();
-      } else if (inputs & BTN_LEFT) {
-        timebase.x_offset -= (uint16_t)(32.0f * timebase.x_zoom + 0.5f);
-        update_grid();
-      }
+      handle_position(view, inputs);
       break;
 
     case State::CURSOR_1:
-      moveCursor(cursor_1, inputs);
+      move_cursor(cursor_1, inputs);
       break;
     case State::CURSOR_2:
-      moveCursor(cursor_2, inputs);
+      move_cursor(cursor_2, inputs);
       break;
 
     default:
@@ -877,8 +958,7 @@ void button_logic(ViewState *view) {
 
   if (view->y_zoom < 0.01) view->y_zoom = 0.01;
   if (view->y_zoom > 20)  view->y_zoom = 20;
-
-  Serial.println((int)state);
+//  }
 }
 
 void oscilloscope_task(void *pvParameters) {
@@ -918,6 +998,8 @@ void oscilloscope_task(void *pvParameters) {
       }
       draw_cursor(&cursor_1);
       draw_cursor(&cursor_2);
+      draw_cursor_difference();
+
       vTaskDelay(pdMS_TO_TICKS(REFRESH_RATE_MS));
     }
 
